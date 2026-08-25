@@ -11,9 +11,11 @@
     `부산원`→부산원동, `거제해`→거제해맞이). 예외로 `부교대`→`교대`는 나무위키
     역별 승하차 순위표에 실제 표기가 '교대'로 확정됨. 단, 이 '교대'는 부산 도시철도
     1호선과 2018.2월 개통된 환승통로로 실제 연결된 환승역이라 — 서울 일산선의
-    동명역 '교대'(무관)와 섞이지 않도록 `교대(부산)`으로 등록한다(2026-08-26,
-    대구/대전 반영 때 build_db.py 자동 병합이 이름만 본다는 사실이 드러나면서 발견
-    — 원래 있던 '교대' 그대로 쓰면 서울 교대와 잘못 병합됨).
+    동명역 '교대'(무관)와 섞이지 않도록 표시명은 그대로 '교대'로 두고 내부
+    merge_key만 `부산교대`로 등록한다(2026-08-26, 대구/대전 반영 때 build_db.py
+    자동 병합이 이름만 본다는 사실이 드러나면서 발견 — 원래 있던 '교대' 그대로
+    쓰면 서울 교대와 잘못 병합됨. merge_key 메커니즘 상세는 build_db.py의
+    meta.station_merge_key 참조).
 """
 import csv
 import datetime
@@ -38,7 +40,9 @@ STATION_ALIAS = {
     "신해운": ("신해운대", "✔"),
     "부산원": ("부산원동", "✔"),
     "거제해": ("거제해맞이", "✔"),
-    "부교대": ("교대(부산)", "✔"),   # 서울 일산선 '교대'와 무관한 부산 자체 환승역
+    # merge_key: 표시명은 그대로 "교대"이되, 내부 병합키만 "부산교대"로 분리해
+    # 서울 일산선의 동명역 '교대'(무관)와 안 섞이게 한다 — 부산1호선도 같은 키 사용.
+    "부교대": ("교대", "✔", "부산교대"),
 }
 
 DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
@@ -59,9 +63,11 @@ def clean(v):
 
 
 def resolve(label):
+    """(정식역명, 검수여부, 내부 병합키(없으면 None))를 반환한다."""
     if label in STATION_ALIAS:
-        return STATION_ALIAS[label]
-    return (label, "✔")
+        v = STATION_ALIAS[label]
+        return v if len(v) == 3 else (v[0], v[1], None)
+    return (label, "✔", None)
 
 
 def main():
@@ -84,10 +90,10 @@ def main():
             if label in JUNCTIONS:
                 st_rows.append((r, "@" + JUNCTIONS[label]))
                 continue
-            name, vf = resolve(label)
+            name, vf, mkey = resolve(label)
             if name not in stops:
                 stops[name] = f"S9{len(stops) + 1:04d}"
-                stop_verify[name] = (label, vf)
+                stop_verify[name] = (label, vf, mkey or "")
             st_rows.append((r, name))
 
         link_row = next((r for r in range(header_row + 1, ws.max_row + 1)
@@ -157,9 +163,9 @@ def main():
 
     with open(f"{OUT}/stops.csv", "w", newline="", encoding="utf-8-sig") as f:
         w = csv.writer(f)
-        w.writerow(["stop_id", "name_ko", "raw_label", "verify"])
+        w.writerow(["stop_id", "name_ko", "raw_label", "verify", "merge_key"])
         for name, sid in stops.items():
-            w.writerow([sid, name, stop_verify[name][0], stop_verify[name][1]])
+            w.writerow([sid, name, stop_verify[name][0], stop_verify[name][1], stop_verify[name][2]])
 
     with open(f"{OUT}/trips.csv", "w", newline="", encoding="utf-8-sig") as f:
         w = csv.DictWriter(f, fieldnames=list(trips[0].keys()))

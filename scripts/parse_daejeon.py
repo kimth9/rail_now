@@ -39,18 +39,19 @@ TERMINUS = {"판암행_평일": "판암", "반석행_평일": "반석",
             "판암행_휴일": "판암", "반석행_휴일": "반석"}
 ESTIMATED_LAST_HOP_MIN = 2
 
-# 대전 밖 다른 노선망(대구·수도권)에 무관한 동명역이 있어 그대로 두면 build_db.py의
-# 이름 기반 자동 병합이 오작동한다 — DB에 실제 반영 후 대조해 확정한 목록.
-CITY_DISAMBIGUATE = {
-    "용문": "용문(대전)",    # 경의중앙선 용문(양평)과 무관
-    "시청": "시청(대전)",    # 서울 1호선 시청과 무관
-    "중앙로": "중앙로(대전)",  # 대구1호선에도 동명역 있음
-    "구암": "구암(대전)",    # 대구3호선에도 동명역 있음
+# 대전 밖 다른 노선망(대구·수도권)에 무관한 동명역이 있어 이름만 보고 자동
+# 병합하면 오작동한다 — 표시명은 그대로 두고 내부 병합키만 분리(merge_key 컬럼).
+# DB에 실제 반영 후 대조해 확정한 목록.
+MERGE_KEY = {
+    "용문": "대전용문",    # 경의중앙선 용문(양평)과 무관
+    "시청": "대전시청",    # 서울 1호선 시청과 무관
+    "중앙로": "대전중앙로",  # 대구1호선에도 동명역 있음
+    "구암": "대전구암",    # 대구3호선에도 동명역 있음
 }
 
 
 def resolve(name):
-    return CITY_DISAMBIGUATE.get(name, name)
+    return name
 
 
 def parse_blocks(ws):
@@ -161,9 +162,9 @@ def main():
 
     with open(f"{OUT}/stops.csv", "w", newline="", encoding="utf-8-sig") as f:
         w = csv.writer(f)
-        w.writerow(["stop_id", "name_ko"])
+        w.writerow(["stop_id", "name_ko", "merge_key"])
         for name, sid in stops.items():
-            w.writerow([sid, name])
+            w.writerow([sid, name, MERGE_KEY.get(name, "")])
 
     with open(f"{OUT}/trips.csv", "w", newline="", encoding="utf-8-sig") as f:
         w = csv.DictWriter(f, fieldnames=list(trips[0].keys()))

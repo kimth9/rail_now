@@ -57,28 +57,25 @@ def clean(v):
 # 코레일 대구역/동대구역과 실제 도보 환승역 — "역" 표기를 벗겨 대경선·KTX와 병합되게 한다
 NORMALIZE = {"대구역": "대구", "동대구역": "동대구"}
 
-# 대구 밖 다른 노선망에 완전히 무관한 동명역이 있어 그대로 두면 build_db.py의
-# 이름 기반 자동 병합이 오작동한다(예: 대구2호선 '용산'과 서울 '용산'은 다른 역).
-# station_groups DB에 실제로 반영된 후 대조해 확정한 목록 — 노선 추가 때마다 재확인 필요.
+# 대구 밖 다른 노선망에 완전히 무관한 동명역이 있어 이름만 보고 자동 병합하면
+# 오작동한다(예: 대구2호선 '용산'과 서울 '용산'은 다른 역). 표시명은 그대로 두고
+# 내부 병합키만 "대구"+역명으로 분리 — station_groups DB 실제 반영 후 대조해 확정한
+# 목록. 노선 추가 때마다 재확인 필요.
 CITY_DISAMBIGUATE = {
-    "용산": "용산(대구)",     # 대구2호선 — 서울 용산과 무관
-    "신기": "신기(대구)",     # 대구1호선 — 국철 신기와 무관
-    "대곡": "대곡(대구)",     # 대구1호선 — 수도권 대곡과 무관
-    "죽전": "죽전(대구)",     # 대구2호선 — 수인분당선 죽전(용인)과 무관
-    "대공원": "대공원(대구)",  # 대구2호선 — 서울대공원(안산과천선)과 무관
-    "교대": "교대(대구)",     # 대구1호선 — 서울/부산 교대와 무관
-    "신천": "신천(대구)",     # 대구1호선 — 서해선(전동) 신천(안산)과 무관
-    "중앙로": "중앙로(대구)",  # 대구1호선 — 대전1호선에도 동명역 있음
-    "구암": "구암(대구)",     # 대구3호선 — 대전1호선에도 동명역 있음
+    "용산", "신기", "대곡", "죽전", "대공원", "신천", "중앙로", "구암",
+    "교대",   # 대구1호선 자체 역 — 서울 일산선·부산1호선의 동명역과 전부 무관
 }
 
 
 def resolve(label, line_no):
-    """다른 호선과 동명인 역에 자기 호선 번호가 접미사로 붙는다 — 벗겨서 정규화."""
+    """다른 호선과 동명인 역에 자기 호선 번호가 접미사로 붙는다 — 벗겨서 정규화.
+    반환값: (정식역명, 내부 병합키(없으면 None))"""
     if label in NORMALIZE:
-        return NORMALIZE[label]
+        return NORMALIZE[label], None
     base = label[:-1] if len(label) > 1 and label[-1] == line_no else label
-    return CITY_DISAMBIGUATE.get(base, base)
+    if base in CITY_DISAMBIGUATE:
+        return base, f"대구{base}"
+    return base, None
 
 
 def main():
@@ -104,10 +101,10 @@ def main():
             label = clean(ws.cell(r, 1).value)
             if not label or "-" in label:
                 continue
-            name = resolve(label, line_no)
+            name, mkey = resolve(label, line_no)
             if name not in stops:
                 stops[name] = f"DGS{len(stops) + 1:04d}"
-                stop_verify[name] = (label, "✔")
+                stop_verify[name] = (label, "✔", mkey or "")
             st_rows.append((r, name))
 
         for c in range(2, ws.max_column + 1):
@@ -172,9 +169,9 @@ def main():
 
     with open(f"{OUT}/stops.csv", "w", newline="", encoding="utf-8-sig") as f:
         w = csv.writer(f)
-        w.writerow(["stop_id", "name_ko", "raw_label", "verify"])
+        w.writerow(["stop_id", "name_ko", "raw_label", "verify", "merge_key"])
         for name, sid in stops.items():
-            w.writerow([sid, name, stop_verify[name][0], stop_verify[name][1]])
+            w.writerow([sid, name, stop_verify[name][0], stop_verify[name][1], stop_verify[name][2]])
 
     with open(f"{OUT}/trips.csv", "w", newline="", encoding="utf-8-sig") as f:
         w = csv.DictWriter(f, fieldnames=list(trips[0].keys()))

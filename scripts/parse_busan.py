@@ -30,20 +30,20 @@ SHEET_RE = re.compile(r"^(\d)호선\s(평|토|휴)\(")
 DAYTYPE = {"평": "평일", "토": "토요일", "휴": "휴일"}
 HEADER_MARKERS = {"열차번호", "열번"}
 
-# 다른 노선망(서울·수도권·대구·대전·국철)에 무관한 동명역이 있어 그대로 두면
-# build_db.py의 이름 기반 자동 병합이 오작동한다 — DB 실제 반영 후 대조해 확정.
-CITY_DISAMBIGUATE = {
-    "중앙": "중앙(부산)",    # 수인분당선·안산과천선 중앙(경기 안산)과 무관
-    "시청": "시청(부산)",    # 서울 1호선 시청과 무관
-    "양정": "양정(부산)",    # 경의중앙선 양정(남양주)과 무관
-    "금곡": "금곡(부산)",    # 경춘선·ITX-청춘 금곡(경기 남양주)과 무관
-    "남산": "남산(부산)",    # 대구3호선 남산(대구 중구)과 무관
-    "중동": "중동(부산)",    # 1호선(경인선) 중동(경기 부천)과 무관
+# 다른 노선망(서울·수도권·대구·대전·국철)에 무관한 동명역이 있어 이름만 보고
+# 자동 병합하면 오작동한다 — 표시명은 그대로 두고 내부 병합키만 분리(merge_key).
+# DB 실제 반영 후 대조해 확정한 목록.
+MERGE_KEY = {
+    "중앙": "부산중앙",    # 수인분당선·안산과천선 중앙(경기 안산)과 무관
+    "시청": "부산시청",    # 서울 1호선 시청과 무관
+    "양정": "부산양정",    # 경의중앙선 양정(남양주)과 무관
+    "금곡": "부산금곡",    # 경춘선·ITX-청춘 금곡(경기 남양주)과 무관
+    "남산": "부산남산",    # 대구3호선 남산(대구 중구)과 무관
+    "중동": "부산중동",    # 1호선(경인선) 중동(경기 부천)과 무관
+    # 동해선(전동)의 '부교대'→'교대' 정규화와 실제 환승역(2018년 개통 환승통로) —
+    # 같은 병합키를 써서 서로만 병합되고 서울 일산선의 동명역과는 안 섞이게 한다.
+    "교대": "부산교대",
 }
-# 부산 자체 내 실제 환승역이지만 다른 도시 동명역과 이미 섞여있던 기존 버그
-# (동해선(전동)의 '부교대'→'교대' 정규화가 서울 일산선 '교대'와 잘못 병합돼 있었음).
-# 부산1호선 쪽도 이 이름으로 등록해 동해선(전동)과만 정확히 병합되게 한다.
-BUSAN_TRANSFER = {"교대": "교대(부산)"}
 
 
 def clean(v):
@@ -51,9 +51,7 @@ def clean(v):
 
 
 def resolve(name):
-    if name in BUSAN_TRANSFER:
-        return BUSAN_TRANSFER[name]
-    return CITY_DISAMBIGUATE.get(name, name)
+    return name, MERGE_KEY.get(name)
 
 
 def to_sec(v):
@@ -91,10 +89,10 @@ def main():
                 label = hdr[i]
                 if not label:
                     break   # 2호선처럼 블록 길이가 짧아 뒤쪽 헤더가 빈 패딩인 경우
-                name = resolve(label)
+                name, mkey = resolve(label)
                 if name not in L["stops"]:
                     L["stops"][name] = f"BS{line_no}{len(L['stops']) + 1:04d}"
-                    L["verify"][name] = (label, "✔")
+                    L["verify"][name] = (label, "✔", mkey or "")
                 station_cols.append((name, i + 1))
 
             direction = "down" if bi == 0 else "up"
@@ -155,9 +153,9 @@ def main():
 
         with open(f"{out_dir}/stops.csv", "w", newline="", encoding="utf-8-sig") as f:
             w = csv.writer(f)
-            w.writerow(["stop_id", "name_ko", "raw_label", "verify"])
+            w.writerow(["stop_id", "name_ko", "raw_label", "verify", "merge_key"])
             for name, sid in L["stops"].items():
-                w.writerow([sid, name, L["verify"][name][0], L["verify"][name][1]])
+                w.writerow([sid, name, L["verify"][name][0], L["verify"][name][1], L["verify"][name][2]])
 
         with open(f"{out_dir}/trips.csv", "w", newline="", encoding="utf-8-sig") as f:
             w = csv.DictWriter(f, fieldnames=list(L["trips"][0].keys()))

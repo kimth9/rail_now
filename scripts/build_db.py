@@ -74,22 +74,29 @@ def main():
 
     name2id, groups = {}, {}
 
-    def gid(gname):
-        if gname not in groups:
-            groups[gname] = f"G{len(groups)+1:04d}"
-            cur.execute("INSERT INTO station_groups VALUES(?,?)", (groups[gname], gname))
-        return groups[gname]
+    def gid(display_name, merge_key):
+        """merge_key로 그룹을 묶되, 사용자에게 보이는 이름(station_groups.name_ko)은
+        항상 깨끗한 display_name — 서로 무관한 동명역을 분리하려고 merge_key에
+        지명을 붙여도(예: '부산교대') 화면에는 절대 노출되지 않는다."""
+        if merge_key not in groups:
+            groups[merge_key] = f"G{len(groups)+1:04d}"
+            cur.execute("INSERT INTO station_groups VALUES(?,?)", (groups[merge_key], display_name))
+        return groups[merge_key]
 
-    def add(raw_name, line, hanja="", eng=""):
-        """노선별로 별개 승강장을 만들고, 같은 역명은 하나의 역사 그룹으로 묶는다."""
+    def add(raw_name, line, hanja="", eng="", merge_key=None):
+        """노선별로 별개 승강장을 만들고, 같은 역명은 하나의 역사 그룹으로 묶는다.
+        merge_key를 주면 그 값으로 그룹을 나눈다 — 서로 무관한 동명역(다른 도시의
+        같은 지명 등)이 이름만 보고 잘못 병합되는 걸 막기 위한 내부 키일 뿐,
+        station_groups.name_ko/stops.name_ko에는 절대 반영되지 않는다."""
         base = UNSPLIT.get(raw_name, raw_name)
-        key = (base, line)
+        mkey = merge_key or base
+        key = (mkey, line)
         if key in name2id:
             return name2id[key]
         sid = f"KR{len(name2id)+1:04d}"
         name2id[key] = sid
         cur.execute("INSERT INTO stops VALUES(?,?,?,?,?,?)",
-                    (sid, f"{base}({line})", base, line, hanja or "", gid(base)))
+                    (sid, f"{base}({line})", base, line, hanja or "", gid(base, mkey)))
         return sid
 
     def rd(path):
@@ -122,7 +129,8 @@ def main():
 
     # --- 일반열차(무궁화·ITX-새마을·ITX-마음 등) — KTX와 같은 "역당 시각 1개" 구조라
     #     같은 해석 규칙을 쓰고, LINE_OF["KTX"]("국철")로 등록해 KTX와 stop_id 공유 ---
-    ibm = {r["stop_id"]: add(r["name_ko"], LINE_OF["KTX"], r["name_hanja"])
+    ibm = {r["stop_id"]: add(r["name_ko"], LINE_OF["KTX"], r["name_hanja"],
+                             merge_key=r.get("merge_key") or None)
            for r in rd(f"{OUT_ILBAN}/stops.csv")}
     for t in rd(f"{OUT_ILBAN}/trips.csv"):
         cur.execute("INSERT INTO trips VALUES(?,?,?,?,?,?,?,?,?,?)",
@@ -323,7 +331,8 @@ def main():
 
     # --- 동해선(전동) — KTX/일반열차 파일에도 각각 다른 실체의 '동해선'이 있어
     #     line_name에 계열 구분자(전동)를 붙인다 (노선명 충돌 방지) ---
-    dhm = {r["stop_id"]: add(r["name_ko"], LINE_OF["DONGHAE"])
+    dhm = {r["stop_id"]: add(r["name_ko"], LINE_OF["DONGHAE"],
+                             merge_key=r.get("merge_key") or None)
            for r in rd(f"{OUT_DONGHAE}/stops.csv")}
     for t in rd(f"{OUT_DONGHAE}/trips.csv"):
         cur.execute("INSERT INTO trips VALUES(?,?,?,?,?,?,?,?,?,?)",
@@ -422,7 +431,8 @@ def main():
     #     서대구역)만 대경선과 자동 병합, 나머지는 완전 별도 station_groups ---
     for i, out_dir in enumerate(OUT_DAEGU, start=1):
         line_key = f"DAEGU{i}"
-        dgm = {r["stop_id"]: add(r["name_ko"], LINE_OF[line_key])
+        dgm = {r["stop_id"]: add(r["name_ko"], LINE_OF[line_key],
+                                 merge_key=r.get("merge_key") or None)
                for r in rd(f"{out_dir}/stops.csv")}
         for t in rd(f"{out_dir}/trips.csv"):
             cur.execute("INSERT INTO trips VALUES(?,?,?,?,?,?,?,?,?,?)",
@@ -442,7 +452,8 @@ def main():
 
     # --- 대전 1호선(대전교통공사, 비코레일) — "출발역 기준 배차표" 원본이라
     #     역당 시각 1개(KTX와 같은 해석 규칙: 종착역만 도착시각) ---
-    djm = {r["stop_id"]: add(r["name_ko"], LINE_OF["DAEJEON1"])
+    djm = {r["stop_id"]: add(r["name_ko"], LINE_OF["DAEJEON1"],
+                             merge_key=r.get("merge_key") or None)
            for r in rd(f"{OUT_DAEJEON1}/stops.csv")}
     for t in rd(f"{OUT_DAEJEON1}/trips.csv"):
         cur.execute("INSERT INTO trips VALUES(?,?,?,?,?,?,?,?,?,?)",
@@ -466,11 +477,12 @@ def main():
                      r["thu"], r["fri"], r["sat"], r["sun"]))
 
     # --- 부산 1/2/3/4호선(부산교통공사, 비코레일) — 노선 내부 환승(서면·동래·연산·
-    #     덕천·수영·미남)은 자동 병합, 동해선(전동)과 실제 환승인 '교대(부산)'는
-    #     parse_donghae.py에서 이미 같은 이름으로 등록해둬서 자동 병합됨 ---
+    #     덕천·수영·미남)은 자동 병합, 동해선(전동)과 실제 환승인 '교대'는 두 파서가
+    #     같은 merge_key("부산교대")를 써서 병합(표시명은 서로 그냥 '교대') ---
     for i, out_dir in enumerate(OUT_BUSAN, start=1):
         line_key = f"BUSAN{i}"
-        bsm = {r["stop_id"]: add(r["name_ko"], LINE_OF[line_key])
+        bsm = {r["stop_id"]: add(r["name_ko"], LINE_OF[line_key],
+                                 merge_key=r.get("merge_key") or None)
                for r in rd(f"{out_dir}/stops.csv")}
         for t in rd(f"{out_dir}/trips.csv"):
             cur.execute("INSERT INTO trips VALUES(?,?,?,?,?,?,?,?,?,?)",
@@ -558,16 +570,28 @@ def main():
                             "지하로 연결된 실제 환승역이라 자동 병합됨"),
         ("source_busan", "부산 도시철도 1/2/3/4호선(부산교통공사, 비코레일) 시각표 "
                          "(평일/토요일/휴일, 2026.8.24 이후 시행). 노선 내부 환승역(서면·동래· "
-                         "연산·덕천·수영·미남)은 자동 병합. 동해선(전동)의 '교대(부산)'와 "
-                         "부산1호선 '교대'가 실제 환승역이라 같은 이름으로 등록해 병합됨 — "
-                         "이 발견으로 기존 동해선(전동) 등록이 서울 일산선 '교대'와 잘못 "
-                         "섞여있던 것도 함께 고침. 중앙·시청·양정은 수도권 동명역과 무관해 "
-                         "'(부산)' 접미사로 분리"),
+                         "연산·덕천·수영·미남)은 자동 병합. 동해선(전동)의 '교대'와 부산1호선 "
+                         "'교대'가 실제 환승역이라 내부 merge_key를 공유해 병합됨(표시명은 "
+                         "둘 다 그냥 '교대') — 이 발견으로 기존 동해선(전동) 등록이 서울 "
+                         "일산선 '교대'와 잘못 섞여있던 것도 함께 고침. 중앙·시청·양정· "
+                         "금곡·남산·중동은 수도권/대구 동명역과 무관해 내부 merge_key로만 "
+                         "분리(화면 표시명은 그대로 '중앙' 등)"),
         ("source_busan_gimhae", "부산김해경전철(비코레일, 사상~가야대) 시각표 (평일/휴일, "
                                 "2022.11.21 기준 — 부산 1~4호선보다 오래된 원본, 재확보 여지 "
                                 "있음). 원본 역명에 전부 '역' 접미사가 붙어있어 벗겨서 등록 — "
                                 "사상(부산2호선)·대저(부산3호선)에서 실제 환승역으로 자동 병합됨"),
         ("station_model", "stops=노선별 승강장(수원(1호선) 등) / station_groups=역사(수원). 계통은 분리하지 않음."),
+        ("station_merge_key", "여러 운영기관을 섞기 시작하면서(대구·대전·부산 등) 서로 무관한 "
+                              "지역에 우연히 같은 역명이 존재하는 경우(예: 충남 논산 '연산' vs "
+                              "부산 '연산', 서울 vs 대구 vs 부산의 '교대')가 실제로 나타났다. "
+                              "이 경우 station_groups.name_ko/stops.name_ko는 항상 깨끗한 "
+                              "역명 그대로 두고(사용자 화면에 지역 접두사가 노출되지 않음), "
+                              "병합 여부만 파서 내부의 merge_key로 결정한다(예: '부산교대' — "
+                              "이 값은 DB에 저장되지 않고 build_db.py 빌드 시에만 쓰이는 내부 "
+                              "키). 같은 이름이지만 다른 역인 경우 서로 다른 merge_key를 줘서 "
+                              "분리하고, 실제 환승역인 경우 두 파서가 같은 merge_key를 공유해 "
+                              "병합한다. 노선 추가할 때마다 빌드 후 '복수 노선 역사' 목록을 "
+                              "전수 점검해 확정한다."),
         ("caveat", "KTX 원본은 역당 시각 1개 — 중간역 arr_sec 없음"),
         ("caveat_holiday", "휴일 다이어는 토·일에만 자동 적용. 공휴일은 calendar_dates 예외 필요."),
     ])
