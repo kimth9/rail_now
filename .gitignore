@@ -1,0 +1,68 @@
+# ==== 팀 표준 .gitignore v1.0 (Python + Node 혼합, OneDrive 환경) ====
+# 근거: ../프로젝트_표준_가이드.md §5.3 — 개정은 가이드와 함께
+
+# --- 시크릿: 절대 커밋 금지 ---
+*.env
+!.env.example
+!*.env.example
+*.pem
+*.key
+credentials*.json
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# --- 빌드 산출물 ---
+build/
+dist/
+*.exe
+
+# --- Node ---
+node_modules/
+
+# --- 표준 폴더 (산출물·로그·스크래치·데이터) ---
+output/
+logs/
+tmp/
+RAW/
+*.log
+
+# --- data/ : 실물은 무시하되 출처메모(.md)는 추적 (가이드 §2.1) ---
+data/**
+!data/**/
+!data/**/*.md
+
+# --- DB (git·OneDrive 양쪽 부적합 — 가이드 §7 참조) ---
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+
+# --- 수동 백업 관행 잔재 차단 ---
+*.7z
+*.zip
+*.bak
+* (1).*
+* (2).*
+* (3).*
+
+# --- 캐시 ---
+.cache/
+
+# --- IDE / OS ---
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# --- Claude Code (팀 설정은 추적, 개인 로컬만 제외) ---
+.claude/settings.local.json
