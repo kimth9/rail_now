@@ -33,6 +33,18 @@ OUT_DAEGU = ["tmp/out_daegu1", "tmp/out_daegu2", "tmp/out_daegu3"]
 OUT_DAEJEON1 = "tmp/out_daejeon"
 OUT_BUSAN = ["tmp/out_busan1", "tmp/out_busan2", "tmp/out_busan3", "tmp/out_busan4"]
 OUT_BUSAN_GIMHAE = "tmp/out_busan_gimhae"
+# 서울교통공사 — 평일/휴일이 별개 파일이라 노선당 출력폴더 목록(8호선만 한 파일에
+# 평일/휴일이 다 있어 폴더 1개)
+OUT_SEOUL = {
+    "SEOUL2": ["tmp/out_seoul2", "tmp/out_seoul2_hol"],
+    "SEOUL5": ["tmp/out_seoul5", "tmp/out_seoul5_hol"],
+    "SEOUL6": ["tmp/out_seoul6", "tmp/out_seoul6_hol"],
+    "SEOUL7": ["tmp/out_seoul7", "tmp/out_seoul7_hol"],
+    "SEOUL8": ["tmp/out_seoul8"],
+    "SEOUL9": ["tmp/out_seoul9", "tmp/out_seoul9_hol"],
+}
+SEOUL_PREFIX = {"SEOUL2": "S2", "SEOUL5": "S5", "SEOUL6": "S6",
+                "SEOUL7": "S7", "SEOUL8": "S8", "SEOUL9": "S9"}
 DB = sys.argv[1] if len(sys.argv) > 1 else "output/kr_rail_timetable.sqlite"
 
 # 노선 단위로 승강장을 나눈다. 계통(경인/경부장항 등)은 나누지 않는다.
@@ -44,7 +56,9 @@ LINE_OF = {"KTX": "국철", "LINE1": "1호선", "SUIN_BUNDANG": "수인분당선
            "DAEGU1": "대구1호선", "DAEGU2": "대구2호선", "DAEGU3": "대구3호선",
            "DAEJEON1": "대전1호선",
            "BUSAN1": "부산1호선", "BUSAN2": "부산2호선", "BUSAN3": "부산3호선",
-           "BUSAN4": "부산4호선", "BUSAN_GIMHAE": "부산김해경전철"}
+           "BUSAN4": "부산4호선", "BUSAN_GIMHAE": "부산김해경전철",
+           "SEOUL2": "2호선", "SEOUL5": "5호선", "SEOUL6": "6호선",
+           "SEOUL7": "7호선", "SEOUL8": "8호선", "SEOUL9": "9호선"}
 # 1호선 원본이 지상/지하를 구분해 둔 이름은 노선 분리로 대체되므로 원래 이름으로 되돌린다
 UNSPLIT = {"서울(지하)": "서울", "청량리(지하)": "청량리"}
 
@@ -520,6 +534,30 @@ def main():
                     (r["service_id"], r["mon"], r["tue"], r["wed"],
                      r["thu"], r["fri"], r["sat"], r["sun"]))
 
+    # --- 서울교통공사 2·5·6·7·8·9호선(비코레일) — 2호선은 순환선(외선/내선),
+    #     나머지는 상행/하행. 각 노선 내부 환승은 이름 기반 자동 병합에 맡김 ---
+    for line_key, dirs in OUT_SEOUL.items():
+        pfx = SEOUL_PREFIX[line_key]
+        for out_dir in dirs:
+            sm = {r["stop_id"]: add(r["name_ko"], LINE_OF[line_key],
+                                     merge_key=r.get("merge_key") or None)
+                  for r in rd(f"{out_dir}/stops.csv")}
+            for t in rd(f"{out_dir}/trips.csv"):
+                cur.execute("INSERT INTO trips VALUES(?,?,?,?,?,?,?,?,?,?)",
+                            (f"{pfx}#" + t["trip_id"], t["train_no"], t["line_name"], t["formation"],
+                             t["direction"], t["service_id"], sm.get(t["origin"], t["origin"]),
+                             sm.get(t["destination"], t["destination"]), t["next_train_no"], line_key))
+            for st in rd(f"{out_dir}/stop_times.csv"):
+                cur.execute("INSERT INTO stop_times VALUES(?,?,?,?,?,?)",
+                            (f"{pfx}#" + st["trip_id"], int(st["stop_seq"]),
+                             sm.get(st["stop_id"], st["stop_id"]),
+                             int(st["arr_sec"]) if st["arr_sec"] else None,
+                             int(st["dep_sec"]) if st["dep_sec"] else None, st["stop_type"]))
+            for r in rd(f"{out_dir}/calendar.csv"):
+                cur.execute("INSERT OR IGNORE INTO calendar VALUES(?,?,?,?,?,?,?,?)",
+                            (r["service_id"], r["mon"], r["tue"], r["wed"],
+                             r["thu"], r["fri"], r["sat"], r["sun"]))
+
     cur.executescript("""
     CREATE INDEX idx_st ON stop_times(stop_id, dep_sec);
     CREATE INDEX idx_tr ON stop_times(trip_id, stop_seq);
@@ -580,6 +618,17 @@ def main():
                                 "2022.11.21 기준 — 부산 1~4호선보다 오래된 원본, 재확보 여지 "
                                 "있음). 원본 역명에 전부 '역' 접미사가 붙어있어 벗겨서 등록 — "
                                 "사상(부산2호선)·대저(부산3호선)에서 실제 환승역으로 자동 병합됨"),
+        ("source_seoul_metro", "서울교통공사 2·5·6·7·8·9호선(비코레일) 시각표. 2호선은 순환선이라 "
+                               "direction이 상행/하행이 아니라 outer(외선)/inner(내선)이고 본선 "
+                               "43개 역만 포함(성수지선·신정지선 미포함). 평일/휴일이 완전히 "
+                               "별개 파일로 배포되고 기준일 격차가 노선마다 다르다: 2·7호선은 "
+                               "평일 2026.8.21 vs 휴일 2022.4/6(4년+ 차이, 가장 심각), 5·6호선은 "
+                               "10~14개월, 9호선만 평일/휴일 기준일 일치(2024.3.30). 8호선은 "
+                               "2025.6.2 최신본 하나가 평일/휴일을 다 포함해 문제 없음. 재확보 "
+                               "전까지 이 상태로 진행 — 사용자 확인된 정책. 원본마다 절삭·구역명 "
+                               "표기가 섞여있어(가산디지털→가산디지털단지, 총신대입구/이수→ "
+                               "총신대입구(이수), 뚝섬유원지/자양→자양(뚝섬한강공원) 등) 최신 "
+                               "공식 표기로 통일함"),
         ("station_model", "stops=노선별 승강장(수원(1호선) 등) / station_groups=역사(수원). 계통은 분리하지 않음."),
         ("station_merge_key", "여러 운영기관을 섞기 시작하면서(대구·대전·부산 등) 서로 무관한 "
                               "지역에 우연히 같은 역명이 존재하는 경우(예: 충남 논산 '연산' vs "
