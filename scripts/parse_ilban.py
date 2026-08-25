@@ -37,6 +37,12 @@ DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
 DAY_CHAR = {"월": 0, "화": 1, "수": 2, "목": 3, "금": 4, "토": 5, "일": 6}
 
 
+# 부산 도시철도(1/3호선)에도 같은 이름의 무관한 역이 있어 그대로 두면
+# build_db.py의 이름 기반 자동 병합이 오작동한다(2026-08-26, 부산 노선 반영 때
+# 발견 — 이 역은 충남 논산시 연산면의 호남선 연산역, 부산 연제구 연산동과 무관).
+RENAME = {"연산": "연산(충남)"}
+
+
 def clean(v):
     return str(v).strip() if v is not None else ""
 
@@ -109,8 +115,8 @@ def main():
 
         for blk in blocks:
             hr, rr, direction = blk["header_row"], blk["remark_row"], blk["direction"]
-            st_rows = [(r, clean(ws.cell(r, 1).value)) for r in blk["station_rows"]
-                       if clean(ws.cell(r, 1).value)]
+            st_rows = [(r, RENAME.get(clean(ws.cell(r, 1).value), clean(ws.cell(r, 1).value)))
+                       for r in blk["station_rows"] if clean(ws.cell(r, 1).value)]
             for _, name in st_rows:
                 if name not in stops:
                     stops[name] = f"KR{len(stops) + 1:04d}"

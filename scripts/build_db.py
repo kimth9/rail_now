@@ -31,6 +31,8 @@ OUT_ILBAN = "tmp/out_ilban"
 OUT_GWANGWANG = "tmp/out_gwangwang"
 OUT_DAEGU = ["tmp/out_daegu1", "tmp/out_daegu2", "tmp/out_daegu3"]
 OUT_DAEJEON1 = "tmp/out_daejeon"
+OUT_BUSAN = ["tmp/out_busan1", "tmp/out_busan2", "tmp/out_busan3", "tmp/out_busan4"]
+OUT_BUSAN_GIMHAE = "tmp/out_busan_gimhae"
 DB = sys.argv[1] if len(sys.argv) > 1 else "output/kr_rail_timetable.sqlite"
 
 # 노선 단위로 승강장을 나눈다. 계통(경인/경부장항 등)은 나누지 않는다.
@@ -40,7 +42,9 @@ LINE_OF = {"KTX": "국철", "LINE1": "1호선", "SUIN_BUNDANG": "수인분당선
            "DONGHAE": "동해선(전동)", "DAEGYEONG": "대경선", "ILSAN": "일산선",
            "ITX_CHUNCHEON": "ITX-청춘", "SEOHAE": "서해선(전동)",
            "DAEGU1": "대구1호선", "DAEGU2": "대구2호선", "DAEGU3": "대구3호선",
-           "DAEJEON1": "대전1호선"}
+           "DAEJEON1": "대전1호선",
+           "BUSAN1": "부산1호선", "BUSAN2": "부산2호선", "BUSAN3": "부산3호선",
+           "BUSAN4": "부산4호선", "BUSAN_GIMHAE": "부산김해경전철"}
 # 1호선 원본이 지상/지하를 구분해 둔 이름은 노선 분리로 대체되므로 원래 이름으로 되돌린다
 UNSPLIT = {"서울(지하)": "서울", "청량리(지하)": "청량리"}
 
@@ -461,6 +465,49 @@ def main():
                     (r["service_id"], r["mon"], r["tue"], r["wed"],
                      r["thu"], r["fri"], r["sat"], r["sun"]))
 
+    # --- 부산 1/2/3/4호선(부산교통공사, 비코레일) — 노선 내부 환승(서면·동래·연산·
+    #     덕천·수영·미남)은 자동 병합, 동해선(전동)과 실제 환승인 '교대(부산)'는
+    #     parse_donghae.py에서 이미 같은 이름으로 등록해둬서 자동 병합됨 ---
+    for i, out_dir in enumerate(OUT_BUSAN, start=1):
+        line_key = f"BUSAN{i}"
+        bsm = {r["stop_id"]: add(r["name_ko"], LINE_OF[line_key])
+               for r in rd(f"{out_dir}/stops.csv")}
+        for t in rd(f"{out_dir}/trips.csv"):
+            cur.execute("INSERT INTO trips VALUES(?,?,?,?,?,?,?,?,?,?)",
+                        (f"BS{i}#" + t["trip_id"], t["train_no"], t["line_name"], t["formation"],
+                         t["direction"], t["service_id"], bsm.get(t["origin"], t["origin"]),
+                         bsm.get(t["destination"], t["destination"]), t["next_train_no"], line_key))
+        for st in rd(f"{out_dir}/stop_times.csv"):
+            cur.execute("INSERT INTO stop_times VALUES(?,?,?,?,?,?)",
+                        (f"BS{i}#" + st["trip_id"], int(st["stop_seq"]),
+                         bsm.get(st["stop_id"], st["stop_id"]),
+                         int(st["arr_sec"]) if st["arr_sec"] else None,
+                         int(st["dep_sec"]) if st["dep_sec"] else None, st["stop_type"]))
+        for r in rd(f"{out_dir}/calendar.csv"):
+            cur.execute("INSERT OR IGNORE INTO calendar VALUES(?,?,?,?,?,?,?,?)",
+                        (r["service_id"], r["mon"], r["tue"], r["wed"],
+                         r["thu"], r["fri"], r["sat"], r["sun"]))
+
+    # --- 부산김해경전철(비코레일) — 사상(부산2호선)·대저(부산3호선) 실제 환승역만
+    #     자동 병합, 나머지는 완전 별도 station_groups ---
+    bgm = {r["stop_id"]: add(r["name_ko"], LINE_OF["BUSAN_GIMHAE"])
+           for r in rd(f"{OUT_BUSAN_GIMHAE}/stops.csv")}
+    for t in rd(f"{OUT_BUSAN_GIMHAE}/trips.csv"):
+        cur.execute("INSERT INTO trips VALUES(?,?,?,?,?,?,?,?,?,?)",
+                    ("BG#" + t["trip_id"], t["train_no"], t["line_name"], t["formation"],
+                     t["direction"], t["service_id"], bgm.get(t["origin"], t["origin"]),
+                     bgm.get(t["destination"], t["destination"]), t["next_train_no"], "BUSAN_GIMHAE"))
+    for st in rd(f"{OUT_BUSAN_GIMHAE}/stop_times.csv"):
+        cur.execute("INSERT INTO stop_times VALUES(?,?,?,?,?,?)",
+                    ("BG#" + st["trip_id"], int(st["stop_seq"]),
+                     bgm.get(st["stop_id"], st["stop_id"]),
+                     int(st["arr_sec"]) if st["arr_sec"] else None,
+                     int(st["dep_sec"]) if st["dep_sec"] else None, st["stop_type"]))
+    for r in rd(f"{OUT_BUSAN_GIMHAE}/calendar.csv"):
+        cur.execute("INSERT OR IGNORE INTO calendar VALUES(?,?,?,?,?,?,?,?)",
+                    (r["service_id"], r["mon"], r["tue"], r["wed"],
+                     r["thu"], r["fri"], r["sat"], r["sun"]))
+
     cur.executescript("""
     CREATE INDEX idx_st ON stop_times(stop_id, dep_sec);
     CREATE INDEX idx_tr ON stop_times(trip_id, stop_seq);
@@ -509,6 +556,17 @@ def main():
                             "시각 그대로지만, 종착역(판암/반석) 자체는 원본에 시각이 없어 직전 역 "
                             "관측시각 + 통상 역간격(2분) 근사치로 보정함. 대전역은 코레일 대전역과 "
                             "지하로 연결된 실제 환승역이라 자동 병합됨"),
+        ("source_busan", "부산 도시철도 1/2/3/4호선(부산교통공사, 비코레일) 시각표 "
+                         "(평일/토요일/휴일, 2026.8.24 이후 시행). 노선 내부 환승역(서면·동래· "
+                         "연산·덕천·수영·미남)은 자동 병합. 동해선(전동)의 '교대(부산)'와 "
+                         "부산1호선 '교대'가 실제 환승역이라 같은 이름으로 등록해 병합됨 — "
+                         "이 발견으로 기존 동해선(전동) 등록이 서울 일산선 '교대'와 잘못 "
+                         "섞여있던 것도 함께 고침. 중앙·시청·양정은 수도권 동명역과 무관해 "
+                         "'(부산)' 접미사로 분리"),
+        ("source_busan_gimhae", "부산김해경전철(비코레일, 사상~가야대) 시각표 (평일/휴일, "
+                                "2022.11.21 기준 — 부산 1~4호선보다 오래된 원본, 재확보 여지 "
+                                "있음). 원본 역명에 전부 '역' 접미사가 붙어있어 벗겨서 등록 — "
+                                "사상(부산2호선)·대저(부산3호선)에서 실제 환승역으로 자동 병합됨"),
         ("station_model", "stops=노선별 승강장(수원(1호선) 등) / station_groups=역사(수원). 계통은 분리하지 않음."),
         ("caveat", "KTX 원본은 역당 시각 1개 — 중간역 arr_sec 없음"),
         ("caveat_holiday", "휴일 다이어는 토·일에만 자동 적용. 공휴일은 calendar_dates 예외 필요."),
