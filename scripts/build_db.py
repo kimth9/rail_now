@@ -50,6 +50,8 @@ OUT_AIRPORT_RAILROAD = "tmp/out_airport_railroad"
 OUT_GIMPO_GOLDLINE = "tmp/out_gimpo_goldline"
 OUT_SILLIM = "tmp/out_sillim"
 OUT_UI_SINSEOL = "tmp/out_ui_sinseol"
+OUT_GTXA_L08 = "tmp/out_gtxa_l08"
+OUT_GTXA_L09 = "tmp/out_gtxa_l09"
 DB = sys.argv[1] if len(sys.argv) > 1 else "output/kr_rail_timetable.sqlite"
 
 # 노선 단위로 승강장을 나눈다. 계통(경인/경부장항 등)은 나누지 않는다.
@@ -66,7 +68,8 @@ LINE_OF = {"KTX": "국철", "LINE1": "1호선", "SUIN_BUNDANG": "수인분당선
            "SEOUL7": "7호선", "SEOUL8": "8호선", "SEOUL9": "9호선",
            "INCHEON1": "인천1호선", "AREX": "공항철도",
            "GIMPO_GOLDLINE": "김포골드라인", "SILLIM": "신림선",
-           "UI_SINSEOL": "우이신설선"}
+           "UI_SINSEOL": "우이신설선",
+           "GTXA_L08": "GTX-A(운정~서울)", "GTXA_L09": "GTX-A(수서~동탄)"}
 # 1호선 원본이 지상/지하를 구분해 둔 이름은 노선 분리로 대체되므로 원래 이름으로 되돌린다
 UNSPLIT = {"서울(지하)": "서울", "청량리(지하)": "청량리"}
 
@@ -695,6 +698,38 @@ def main():
                     (r["service_id"], r["mon"], r["tue"], r["wed"],
                      r["thu"], r["fri"], r["sat"], r["sun"]))
 
+    # --- GTX-A(에스지레일, 비코레일, 웹크롤링 소스) — 운정중앙~서울역(L08)·
+    #     수서~동탄(L09) 두 구간이 물리적으로 분리 운행이라 별개 line_name으로
+    #     등록. "역당 시각 1개" 구조라 김포골드라인과 같은 해석 규칙. 대곡·연신내·
+    #     수서·성남·구성·동탄은 기존 노선과 실제 환승역으로 자동 병합, 서울역은
+    #     표기가 달라 merge_key로 기존 '서울'과 명시적 병합. 평일만 반영(휴일
+    #     dayTypeCode 조회 결과 빈 리스트 — 아직 미공개) ---
+    for out_dir, line_key, tag in [(OUT_GTXA_L08, "GTXA_L08", "GTXA_L08"),
+                                     (OUT_GTXA_L09, "GTXA_L09", "GTXA_L09")]:
+        gam = {r["stop_id"]: add(r["name_ko"], LINE_OF[line_key],
+                                  merge_key=r.get("merge_key") or None)
+               for r in rd(f"{out_dir}/stops.csv")}
+        for t in rd(f"{out_dir}/trips.csv"):
+            cur.execute("INSERT INTO trips VALUES(?,?,?,?,?,?,?,?,?,?)",
+                        (f"{tag}#" + t["trip_id"], t["train_no"], t["line_name"], t["formation"],
+                         t["direction"], t["service_id"], gam[t["origin"]], gam[t["destination"]],
+                         "", tag))
+        rows = sorted(rd(f"{out_dir}/stop_times.csv"),
+                      key=lambda r: (r["trip_id"], int(r["stop_seq"])))
+        for tid, grp in itertools.groupby(rows, key=lambda r: r["trip_id"]):
+            g = list(grp)
+            for i, s in enumerate(g):
+                kind = "origin" if i == 0 else ("destination" if i == len(g) - 1 else "stop")
+                sec = int(s["dep_sec"])
+                cur.execute("INSERT INTO stop_times VALUES(?,?,?,?,?,?)",
+                            (f"{tag}#" + tid, int(s["stop_seq"]), gam[s["stop_id"]],
+                             sec if kind == "destination" else None,
+                             None if kind == "destination" else sec, kind))
+        for r in rd(f"{out_dir}/calendar.csv"):
+            cur.execute("INSERT OR IGNORE INTO calendar VALUES(?,?,?,?,?,?,?,?)",
+                        (r["service_id"], r["mon"], r["tue"], r["wed"],
+                         r["thu"], r["fri"], r["sat"], r["sun"]))
+
     cur.executescript("""
     CREATE INDEX idx_st ON stop_times(stop_id, dep_sec);
     CREATE INDEX idx_tr ON stop_times(trip_id, stop_seq);
@@ -793,6 +828,16 @@ def main():
                               "분(分) 단위 정밀도만 제공. daytype이 평일/주말 2종뿐(토요일 "
                               "별도 없음). 성신여대입구(안산과천선)·보문(6호선)·신설동(1호선)"
                               "에서 실제 환승역으로 자동 병합. 목적지 분기 표기 없음(전 역 확인)"),
+        ("source_gtxa", "GTX-A(에스지레일, 비코레일) 시각표. 공식 홈페이지(gtx-a.com)는 "
+                        "curl 등 자동화 도구 User-Agent를 차단하지만, 시각표를 채우는 내부 "
+                        "API(`/trainTimeTable.do`)는 일반 User-Agent+Referer만으로 curl "
+                        "응답이 그대로 와서 브라우저 자동화 없이 9개 역 데이터 확보(정찰 "
+                        "단계에서만 브라우저로 API 경로를 확인함). 운정중앙~서울역(L08, "
+                        "5개 역)·수서~동탄(L09, 4개 역) 두 구간이 물리적으로 분리 운행 "
+                        "중이라 line_name을 구분해 등록. dayTypeCode=2(휴일) 조회 결과가 "
+                        "빈 리스트라 휴일 시각표는 아직 미공개로 판단, 평일만 반영. 대곡· "
+                        "연신내·수서·성남·구성·동탄은 기존 노선과 실제 환승역으로 자동 "
+                        "병합, 서울역은 표기가 달라 merge_key로 기존 '서울'과 명시적 병합"),
         ("station_model", "stops=노선별 승강장(수원(1호선) 등) / station_groups=역사(수원). 계통은 분리하지 않음."),
         ("station_merge_key", "여러 운영기관을 섞기 시작하면서(대구·대전·부산 등) 서로 무관한 "
                               "지역에 우연히 같은 역명이 존재하는 경우(예: 충남 논산 '연산' vs "
