@@ -45,6 +45,8 @@ OUT_SEOUL = {
 }
 SEOUL_PREFIX = {"SEOUL2": "S2", "SEOUL5": "S5", "SEOUL6": "S6",
                 "SEOUL7": "S7", "SEOUL8": "S8", "SEOUL9": "S9"}
+OUT_INCHEON1 = "tmp/out_incheon1"
+OUT_AIRPORT_RAILROAD = "tmp/out_airport_railroad"
 DB = sys.argv[1] if len(sys.argv) > 1 else "output/kr_rail_timetable.sqlite"
 
 # 노선 단위로 승강장을 나눈다. 계통(경인/경부장항 등)은 나누지 않는다.
@@ -58,7 +60,8 @@ LINE_OF = {"KTX": "국철", "LINE1": "1호선", "SUIN_BUNDANG": "수인분당선
            "BUSAN1": "부산1호선", "BUSAN2": "부산2호선", "BUSAN3": "부산3호선",
            "BUSAN4": "부산4호선", "BUSAN_GIMHAE": "부산김해경전철",
            "SEOUL2": "2호선", "SEOUL5": "5호선", "SEOUL6": "6호선",
-           "SEOUL7": "7호선", "SEOUL8": "8호선", "SEOUL9": "9호선"}
+           "SEOUL7": "7호선", "SEOUL8": "8호선", "SEOUL9": "9호선",
+           "INCHEON1": "인천1호선", "AREX": "공항철도"}
 # 1호선 원본이 지상/지하를 구분해 둔 이름은 노선 분리로 대체되므로 원래 이름으로 되돌린다
 UNSPLIT = {"서울(지하)": "서울", "청량리(지하)": "청량리"}
 
@@ -558,6 +561,54 @@ def main():
                             (r["service_id"], r["mon"], r["tue"], r["wed"],
                              r["thu"], r["fri"], r["sat"], r["sun"]))
 
+    # --- 인천 도시철도 1호선(인천교통공사, 비코레일) — "역당 시각 1개" 구조라
+    #     KTX와 같은 해석 규칙(종착역만 도착시각). 부평(1호선)·부평구청(7호선)·
+    #     계양(공항철도)에서 실제 환승역으로 자동 병합 ---
+    icm = {r["stop_id"]: add(r["name_ko"], LINE_OF["INCHEON1"])
+           for r in rd(f"{OUT_INCHEON1}/stops.csv")}
+    for t in rd(f"{OUT_INCHEON1}/trips.csv"):
+        cur.execute("INSERT INTO trips VALUES(?,?,?,?,?,?,?,?,?,?)",
+                    ("IC1#" + t["trip_id"], t["train_no"], t["line_name"], t["formation"],
+                     t["direction"], t["service_id"], icm[t["origin"]], icm[t["destination"]],
+                     "", "INCHEON1"))
+    rows = sorted(rd(f"{OUT_INCHEON1}/stop_times.csv"),
+                  key=lambda r: (r["trip_id"], int(r["stop_seq"])))
+    for tid, grp in itertools.groupby(rows, key=lambda r: r["trip_id"]):
+        g = list(grp)
+        for i, s in enumerate(g):
+            kind = "origin" if i == 0 else ("destination" if i == len(g) - 1 else "stop")
+            sec = int(s["dep_sec"])
+            cur.execute("INSERT INTO stop_times VALUES(?,?,?,?,?,?)",
+                        ("IC1#" + tid, int(s["stop_seq"]), icm[s["stop_id"]],
+                         sec if kind == "destination" else None,
+                         None if kind == "destination" else sec, kind))
+    for r in rd(f"{OUT_INCHEON1}/calendar.csv"):
+        cur.execute("INSERT OR IGNORE INTO calendar VALUES(?,?,?,?,?,?,?,?)",
+                    (r["service_id"], r["mon"], r["tue"], r["wed"],
+                     r["thu"], r["fri"], r["sat"], r["sun"]))
+
+    # --- 공항철도(AREX, 비코레일) — 서울·공덕·홍대입구·디지털미디어시티·
+    #     김포공항·계양에서 기존 노선과 실제 환승역으로 자동 병합. 수색직결선은
+    #     실제 정차역이 아니라 선로 연결 지점이라 junctions로 분리 ---
+    cur.execute("INSERT INTO junctions VALUES(?,?)", ("@수색직결선", "수색직결선"))
+    arm = {r["stop_id"]: add(r["name_ko"], LINE_OF["AREX"])
+           for r in rd(f"{OUT_AIRPORT_RAILROAD}/stops.csv")}
+    for t in rd(f"{OUT_AIRPORT_RAILROAD}/trips.csv"):
+        cur.execute("INSERT INTO trips VALUES(?,?,?,?,?,?,?,?,?,?)",
+                    ("AR#" + t["trip_id"], t["train_no"], t["line_name"], t["formation"],
+                     t["direction"], t["service_id"], arm.get(t["origin"], t["origin"]),
+                     arm.get(t["destination"], t["destination"]), t["next_train_no"], "AREX"))
+    for st in rd(f"{OUT_AIRPORT_RAILROAD}/stop_times.csv"):
+        cur.execute("INSERT INTO stop_times VALUES(?,?,?,?,?,?)",
+                    ("AR#" + st["trip_id"], int(st["stop_seq"]),
+                     arm.get(st["stop_id"], st["stop_id"]),
+                     int(st["arr_sec"]) if st["arr_sec"] else None,
+                     int(st["dep_sec"]) if st["dep_sec"] else None, st["stop_type"]))
+    for r in rd(f"{OUT_AIRPORT_RAILROAD}/calendar.csv"):
+        cur.execute("INSERT OR IGNORE INTO calendar VALUES(?,?,?,?,?,?,?,?)",
+                    (r["service_id"], r["mon"], r["tue"], r["wed"],
+                     r["thu"], r["fri"], r["sat"], r["sun"]))
+
     cur.executescript("""
     CREATE INDEX idx_st ON stop_times(stop_id, dep_sec);
     CREATE INDEX idx_tr ON stop_times(trip_id, stop_seq);
@@ -629,6 +680,17 @@ def main():
                                "표기가 섞여있어(가산디지털→가산디지털단지, 총신대입구/이수→ "
                                "총신대입구(이수), 뚝섬유원지/자양→자양(뚝섬한강공원) 등) 최신 "
                                "공식 표기로 통일함"),
+        ("source_incheon1", "인천 도시철도 1호선(인천교통공사, 비코레일) 시각표. 원본이 `.xls`(구버전 "
+                            "바이너리)라 openpyxl이 못 열어 xlrd로 읽음(프로젝트 최초 xlrd 의존성). "
+                            "평일/토휴일 2종 — 토요일과 휴일을 하나로 묶은 다이어라 대구·부산과 달리 "
+                            "별도 토요일 다이어가 없음. 부평(1호선)·부평구청(7호선)·계양(공항철도)에서 "
+                            "실제 환승역으로 자동 병합"),
+        ("source_airport_railroad", "공항철도(AREX, 비코레일) 시각표. 서울·공덕·홍대입구· "
+                                    "디지털미디어시티·김포공항·계양에서 기존 노선과 실제 환승역으로 "
+                                    "자동 병합. '수색직결선'은 원본에 '---'로 통과 표시된 선로 연결 "
+                                    "지점이라 실제 정차역이 아니라 junctions로 분리. '지상서울'· "
+                                    "'수색'은 원본에 자리는 있지만 평일·휴일·양방향 전부 실제 정차 "
+                                    "기록 0건(경의선 '도라산'과 같은 부류 — 운행 미사용 구간으로 추정)"),
         ("station_model", "stops=노선별 승강장(수원(1호선) 등) / station_groups=역사(수원). 계통은 분리하지 않음."),
         ("station_merge_key", "여러 운영기관을 섞기 시작하면서(대구·대전·부산 등) 서로 무관한 "
                               "지역에 우연히 같은 역명이 존재하는 경우(예: 충남 논산 '연산' vs "

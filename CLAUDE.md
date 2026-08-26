@@ -23,7 +23,7 @@ python scripts/parse_line1.py <1호선_평일.xlsx>   out_line1/
 python scripts/build_db.py    output/kr_rail_timetable.sqlite
 ```
 
-의존성: `openpyxl`뿐.
+의존성: `openpyxl` + `xlrd`(인천1호선 `.xls` 전용).
 
 ## 4. 도메인 핵심 지식
 
