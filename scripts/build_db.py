@@ -53,6 +53,8 @@ OUT_UI_SINSEOL = "tmp/out_ui_sinseol"
 OUT_GTXA_L08 = "tmp/out_gtxa_l08"
 OUT_GTXA_L09 = "tmp/out_gtxa_l09"
 OUT_GWANGJU1 = "tmp/out_gwangju1"
+OUT_INCHEON2 = "tmp/out_incheon2"
+OUT_YONGIN = "tmp/out_yongin"
 DB = sys.argv[1] if len(sys.argv) > 1 else "output/kr_rail_timetable.sqlite"
 
 # 노선 단위로 승강장을 나눈다. 계통(경인/경부장항 등)은 나누지 않는다.
@@ -71,7 +73,8 @@ LINE_OF = {"KTX": "국철", "LINE1": "1호선", "SUIN_BUNDANG": "수인분당선
            "GIMPO_GOLDLINE": "김포골드라인", "SILLIM": "신림선",
            "UI_SINSEOL": "우이신설선",
            "GTXA_L08": "GTX-A(운정~서울)", "GTXA_L09": "GTX-A(수서~동탄)",
-           "GWANGJU1": "광주1호선"}
+           "GWANGJU1": "광주1호선", "INCHEON2": "인천2호선(추정)",
+           "YONGIN": "용인경전철(추정)"}
 # 1호선 원본이 지상/지하를 구분해 둔 이름은 노선 분리로 대체되므로 원래 이름으로 되돌린다
 UNSPLIT = {"서울(지하)": "서울", "청량리(지하)": "청량리"}
 
@@ -774,6 +777,61 @@ def main():
                     (SUN_ONLY_LABEL(r["service_id"]), r["mon"], r["tue"], r["wed"],
                      r["thu"], r["fri"], r["sat"], r["sun"]))
 
+    # --- 인천 도시철도 2호선(인천교통공사, 비코레일, 추정치 기반) — 공식 시각표
+    #     미공개, 배차간격+역별 첫차/막차만으로 근사 생성(scripts/parse_incheon2.py,
+    #     README "추정치 기반" 캐비어트 참조). 인천시청·검암·계양·석남에서 기존
+    #     노선(인천1호선·공항철도·서울7호선)과 실제 환승역으로 자동 병합 ---
+    ic2m = {r["stop_id"]: add(r["name_ko"], LINE_OF["INCHEON2"],
+                              merge_key=r.get("merge_key") or None)
+            for r in rd(f"{OUT_INCHEON2}/stops.csv")}
+    for t in rd(f"{OUT_INCHEON2}/trips.csv"):
+        cur.execute("INSERT INTO trips VALUES(?,?,?,?,?,?,?,?,?,?)",
+                    ("IC2#" + t["trip_id"], t["train_no"], t["line_name"], t["formation"],
+                     t["direction"], t["service_id"], ic2m[t["origin"]], ic2m[t["destination"]],
+                     "", "INCHEON2"))
+    rows = sorted(rd(f"{OUT_INCHEON2}/stop_times.csv"),
+                  key=lambda r: (r["trip_id"], int(r["stop_seq"])))
+    for tid, grp in itertools.groupby(rows, key=lambda r: r["trip_id"]):
+        g = list(grp)
+        for i, s in enumerate(g):
+            kind = "origin" if i == 0 else ("destination" if i == len(g) - 1 else "stop")
+            sec = int(s["dep_sec"])
+            cur.execute("INSERT INTO stop_times VALUES(?,?,?,?,?,?)",
+                        ("IC2#" + tid, int(s["stop_seq"]), ic2m[s["stop_id"]],
+                         sec if kind == "destination" else None,
+                         None if kind == "destination" else sec, kind))
+    for r in rd(f"{OUT_INCHEON2}/calendar.csv"):
+        cur.execute("INSERT OR IGNORE INTO calendar VALUES(?,?,?,?,?,?,?,?)",
+                    (r["service_id"], r["mon"], r["tue"], r["wed"],
+                     r["thu"], r["fri"], r["sat"], r["sun"]))
+
+    # --- 용인경전철(용인에버라인, 비코레일, 추정치 기반) — 인천2호선과 같은
+    #     방식(배차간격+역별 첫차/막차 근사). 기흥은 수인분당선과 실제 환승역,
+    #     동백은 부산2호선 동명역과 무관해 merge_key로 분리 ---
+    yim = {r["stop_id"]: add(r["name_ko"], LINE_OF["YONGIN"],
+                             merge_key=r.get("merge_key") or None)
+           for r in rd(f"{OUT_YONGIN}/stops.csv")}
+    for t in rd(f"{OUT_YONGIN}/trips.csv"):
+        cur.execute("INSERT INTO trips VALUES(?,?,?,?,?,?,?,?,?,?)",
+                    ("YI#" + t["trip_id"], t["train_no"], t["line_name"], t["formation"],
+                     t["direction"], t["service_id"], yim[t["origin"]], yim[t["destination"]],
+                     "", "YONGIN"))
+    rows = sorted(rd(f"{OUT_YONGIN}/stop_times.csv"),
+                  key=lambda r: (r["trip_id"], int(r["stop_seq"])))
+    for tid, grp in itertools.groupby(rows, key=lambda r: r["trip_id"]):
+        g = list(grp)
+        for i, s in enumerate(g):
+            kind = "origin" if i == 0 else ("destination" if i == len(g) - 1 else "stop")
+            sec = int(s["dep_sec"])
+            cur.execute("INSERT INTO stop_times VALUES(?,?,?,?,?,?)",
+                        ("YI#" + tid, int(s["stop_seq"]), yim[s["stop_id"]],
+                         sec if kind == "destination" else None,
+                         None if kind == "destination" else sec, kind))
+    for r in rd(f"{OUT_YONGIN}/calendar.csv"):
+        cur.execute("INSERT OR IGNORE INTO calendar VALUES(?,?,?,?,?,?,?,?)",
+                    (r["service_id"], r["mon"], r["tue"], r["wed"],
+                     r["thu"], r["fri"], r["sat"], r["sun"]))
+
     cur.executescript("""
     CREATE INDEX idx_st ON stop_times(stop_id, dep_sec);
     CREATE INDEX idx_tr ON stop_times(trip_id, stop_seq);
@@ -902,6 +960,24 @@ def main():
                                      "SUN_ONLY_LABEL()로 이 3개 노선의 '휴일'만 '휴일(일요일)'로 "
                                      "분리해 고쳤다. 대구·부산도 이 커밋부터 정상화됨(기존 "
                                      "trips 데이터 자체는 안 바뀌었고 calendar 매핑만 정정됨)"),
+        ("source_incheon2", "인천 도시철도 2호선(인천교통공사) 시각표 — **추정치 기반**. "
+                            "공식 사이트가 분 단위 상세 시각표를 공개하지 않아(배차간격표+ "
+                            "역별 첫차/막차만 공개), `scripts/_headway_estimate.py`로 배차 "
+                            "간격 기반 근사 시각표를 생성했다(막차 기준 오프셋으로 평행이동, "
+                            "첫차는 그 역의 실제 값으로 스냅). 인천시청·검암·계양·석남에서 "
+                            "기존 노선(인천1호선·공항철도·서울7호선)과 실제 환승역으로 자동 "
+                            "병합. 노선 중간에 단축운행 시발역이 여러 곳 있다는 걸 확인했으나 "
+                            "그 역들의 추가 배차까지는 복원하지 못함(추정치 근본 한계)"),
+        ("source_yongin", "용인경전철(용인에버라인㈜) 시각표 — **추정치 기반**, 인천2호선과 "
+                          "같은 방법론(배차간격+역별 첫차/막차 근사, 요일별 첫차/막차 값은 "
+                          "공개 안 돼 있어 하나만 사용, 배차간격만 평일/휴일 구분). 기흥은 "
+                          "수인분당선과 실제 환승역으로 자동 병합, 동백은 부산2호선 동명역과 "
+                          "무관해 merge_key로 분리"),
+        ("caveat_estimation", "인천2호선·용인경전철은 실제 관측 시각표가 아니라 배차간격+ "
+                              "첫차/막차만으로 재구성한 근사치다. 실제 열차 도착시각과 몇 분 "
+                              "단위로 어긋날 수 있고, 노선 중간의 단축운행(구간운행) 열차는 "
+                              "반영되지 않는다 — 진행바 등 정밀 UI에는 부적합, '대략적인 배차 "
+                              "안내' 용도로만 사용할 것"),
         ("station_model", "stops=노선별 승강장(수원(1호선) 등) / station_groups=역사(수원). 계통은 분리하지 않음."),
         ("station_merge_key", "여러 운영기관을 섞기 시작하면서(대구·대전·부산 등) 서로 무관한 "
                               "지역에 우연히 같은 역명이 존재하는 경우(예: 충남 논산 '연산' vs "
