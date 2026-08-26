@@ -12,10 +12,14 @@ gimpo_goldline_raw.json`으로 저장해둔 걸 읽는다.
 역마다 그 역을 출발하는 시각 목록만 있다. `_station_list_reconstruct.link_trips()`
 로 열차 단위 trip을 복원한다.
 
-시각 표기에 괄호가 섞여있다(예: `(08) 10 13`) — 사이트에 범례가 없고 CSS로도
-구분이 안 돼 의미를 특정하지 못했다(값 자체는 항상 유효한 분 단위 시각). 실제
-승차 가능한 시각이라는 점은 분명하므로 괄호를 벗기고 모두 동일하게 취급했다 —
-후속 조사에서 의미가 밝혀지면(예: 특정 조건부 운행) 재검토 필요.
+시각 표기에 괄호가 섞여있다(예: `(08) 10 13`) — 사이트에 범례가 없었지만
+사용자 확인(2026-08-26): **괄호 = 양촌행 열차, 비괄호 = 구래행(단축) 열차**.
+양촌역은 차량기지 성격이라 운행 횟수가 적어, "구래(양촌) 방면" 표 하나에
+실제로는 종점이 다른 두 종류의 열차가 섞여 실려있는 것 — 괄호 여부로 미리
+분리하지 않으면 FIFO 재구성이 서로 다른 두 열차의 시각을 잘못 이어붙일 위험이
+있다. 그래서 상행(양촌 방향)은 두 그룹을 완전히 분리해 각각 재구성한다
+(양촌행=괄호 값만, 구래행=비괄호 값만 + 구래에서 종착). 하행(김포공항 방면)은
+표에 괄호가 전혀 없어(모든 역에서 확인) 분리가 필요 없다.
 """
 import csv
 import json
@@ -42,17 +46,20 @@ MERGE_KEY = {
     "고촌": "김포고촌",  # 부산4호선 고촌(부산 해운대구)과 무관
 }
 
-NUM_RE = re.compile(r"\(?(\d{1,2})\)?")
+PAREN_RE = re.compile(r"\((\d{1,2})\)")
+BARE_RE = re.compile(r"(?<!\()\b(\d{1,2})\b(?!\))")
 
 
 def clean_station(name):
     return name[:-1] if name.endswith("역") else name
 
 
-def parse_minutes(cell_text):
+def parse_minutes_split(cell_text):
+    """(괄호 안 분 목록, 괄호 밖 분 목록) — 괄호=양촌행, 비괄호=구래행(단축)."""
     if cell_text.strip() == "-":
-        return []
-    return [int(m.group(1)) for m in NUM_RE.finditer(cell_text)]
+        return [], []
+    return ([int(x) for x in PAREN_RE.findall(cell_text)],
+            [int(x) for x in BARE_RE.findall(cell_text)])
 
 
 def main():
@@ -66,7 +73,7 @@ def main():
         name = clean_station(station)
         by_station.setdefault(name, []).append(rows)
 
-    # daytype별로 (역명, [시각(분)]) 블록 생성
+    # 역별로 (평일_괄호, 평일_비괄호, 휴일_괄호, 휴일_비괄호) 4종 분(分) 리스트 생성
     def build_blocks(station_names, table_index):
         blocks = []
         for name in station_names:
@@ -74,32 +81,39 @@ def main():
             if table_index >= len(tables):
                 continue
             rows = tables[table_index]
-            times_w, times_h = [], []
+            w_paren, w_bare, h_paren, h_bare = [], [], [], []
             for hour_s, w_cell, h_cell in rows:
                 hour = int(hour_s)
-                for m in parse_minutes(w_cell):
-                    times_w.append(hour * 60 + m)
-                for m in parse_minutes(h_cell):
-                    times_h.append(hour * 60 + m)
-            blocks.append((name, sorted(times_w), sorted(times_h)))
+                p, b = parse_minutes_split(w_cell)
+                w_paren += [hour * 60 + m for m in p]
+                w_bare += [hour * 60 + m for m in b]
+                p, b = parse_minutes_split(h_cell)
+                h_paren += [hour * 60 + m for m in p]
+                h_bare += [hour * 60 + m for m in b]
+            blocks.append((name, sorted(w_paren), sorted(w_bare), sorted(h_paren), sorted(h_bare)))
         return blocks
 
-    down_blocks_raw = build_blocks(STATION_ORDER[:-1], 0)   # 양촌..고촌, "김포공항 방면"
+    # 김포공항 방면(하행)은 전 역에서 괄호가 전혀 없음(확인됨) — 비괄호(=전부) 값만 사용
+    down_blocks_raw = build_blocks(STATION_ORDER[:-1], 0)   # 양촌..고촌
 
+    # 양촌 방면(상행)은 괄호=양촌행/비괄호=구래행(단축)이 섞여있어 분리 필요.
     # 구래~고촌은 테이블 2개(0=김포공항 방면, 1=양촌 방면), 김포공항은 1개(0=양촌 방면)
+    up_stations = list(reversed(STATION_ORDER[1:]))   # 김포공항..구래
     up_blocks_raw = []
-    for name in reversed(STATION_ORDER[1:]):
+    for name in up_stations:
         tables = by_station[name]
         idx = 1 if len(tables) > 1 else 0
         rows = tables[idx]
-        times_w, times_h = [], []
+        w_paren, w_bare, h_paren, h_bare = [], [], [], []
         for hour_s, w_cell, h_cell in rows:
             hour = int(hour_s)
-            for m in parse_minutes(w_cell):
-                times_w.append(hour * 60 + m)
-            for m in parse_minutes(h_cell):
-                times_h.append(hour * 60 + m)
-        up_blocks_raw.append((name, sorted(times_w), sorted(times_h)))
+            p, b = parse_minutes_split(w_cell)
+            w_paren += [hour * 60 + m for m in p]
+            w_bare += [hour * 60 + m for m in b]
+            p, b = parse_minutes_split(h_cell)
+            h_paren += [hour * 60 + m for m in p]
+            h_bare += [hour * 60 + m for m in b]
+        up_blocks_raw.append((name, sorted(w_paren), sorted(w_bare), sorted(h_paren), sorted(h_bare)))
 
     stops = OrderedDict()
     for name in STATION_ORDER:
@@ -107,9 +121,8 @@ def main():
 
     trips, stop_times = [], []
 
-    def process(direction, terminus, blocks_raw, daytype_key, daytype_label):
-        blocks = [(name, w if daytype_key == "w" else h)
-                  for name, w, h in blocks_raw]
+    def process(direction, terminus, blocks, daytype_label):
+        """blocks: [(역명, [시각(분)]), ...] — daytype·괄호여부로 이미 골라둔 것."""
         blocks = [(name, times) for name, times in blocks if times]
         if len(blocks) < 2:
             return
@@ -118,7 +131,7 @@ def main():
             if len(chain) < 2:
                 continue
             full_run = chain[-1][0] == len(blocks) - 1
-            trip_id = f"{direction}#{daytype_label}#{ci}"
+            trip_id = f"{direction}#{terminus}#{daytype_label}#{ci}"
             for seq, (block_idx, t) in enumerate(chain, start=1):
                 stop_times.append({
                     "trip_id": trip_id, "stop_seq": seq,
@@ -143,10 +156,12 @@ def main():
                 "next_train_no": "",
             })
 
-    process("down", "김포공항", down_blocks_raw, "w", "평일")
-    process("down", "김포공항", down_blocks_raw, "h", "휴일")
-    process("up", "양촌", up_blocks_raw, "w", "평일")
-    process("up", "양촌", up_blocks_raw, "h", "휴일")
+    process("down", "김포공항", [(n, wb) for n, _wp, wb, _hp, _hb in down_blocks_raw], "평일")
+    process("down", "김포공항", [(n, hb) for n, _wp, _wb, _hp, hb in down_blocks_raw], "휴일")
+    process("up", "양촌", [(n, wp) for n, wp, _wb, _hp, _hb in up_blocks_raw], "평일")
+    process("up", "양촌", [(n, hp) for n, _wp, _wb, hp, _hb in up_blocks_raw], "휴일")
+    process("up", "구래", [(n, wb) for n, _wp, wb, _hp, _hb in up_blocks_raw], "평일")
+    process("up", "구래", [(n, hb) for n, _wp, _wb, _hp, hb in up_blocks_raw], "휴일")
 
     os.makedirs(OUT, exist_ok=True)
 
