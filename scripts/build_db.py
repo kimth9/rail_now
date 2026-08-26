@@ -52,6 +52,7 @@ OUT_SILLIM = "tmp/out_sillim"
 OUT_UI_SINSEOL = "tmp/out_ui_sinseol"
 OUT_GTXA_L08 = "tmp/out_gtxa_l08"
 OUT_GTXA_L09 = "tmp/out_gtxa_l09"
+OUT_GWANGJU1 = "tmp/out_gwangju1"
 DB = sys.argv[1] if len(sys.argv) > 1 else "output/kr_rail_timetable.sqlite"
 
 # 노선 단위로 승강장을 나눈다. 계통(경인/경부장항 등)은 나누지 않는다.
@@ -69,7 +70,8 @@ LINE_OF = {"KTX": "국철", "LINE1": "1호선", "SUIN_BUNDANG": "수인분당선
            "INCHEON1": "인천1호선", "AREX": "공항철도",
            "GIMPO_GOLDLINE": "김포골드라인", "SILLIM": "신림선",
            "UI_SINSEOL": "우이신설선",
-           "GTXA_L08": "GTX-A(운정~서울)", "GTXA_L09": "GTX-A(수서~동탄)"}
+           "GTXA_L08": "GTX-A(운정~서울)", "GTXA_L09": "GTX-A(수서~동탄)",
+           "GWANGJU1": "광주1호선"}
 # 1호선 원본이 지상/지하를 구분해 둔 이름은 노선 분리로 대체되므로 원래 이름으로 되돌린다
 UNSPLIT = {"서울(지하)": "서울", "청량리(지하)": "청량리"}
 
@@ -126,6 +128,13 @@ def main():
 
     def rd(path):
         return csv.DictReader(open(path, encoding="utf-8-sig"))
+
+    def SUN_ONLY_LABEL(service_id):
+        """평일/토요일/휴일 3종 다이어 계열(대구·부산·광주1호선)의 '휴일'은
+        일요일 전용 — 2종 다이어(평일/휴일=토+일) 계열과 문자열이 같아 그대로
+        두면 먼저 INSERT된 쪽에 덮여 일요일 전용 트립이 토요일에도 잘못
+        노출되므로 별도 calendar 행으로 이름을 분리한다."""
+        return "휴일(일요일)" if service_id == "휴일" else service_id
 
     # --- KTX ---
     km = {r["stop_id"]: add(r["name_ko"], LINE_OF["KTX"], r["name_hanja"])
@@ -453,7 +462,12 @@ def main():
                      r["thu"], r["fri"], r["sat"], r["sun"]))
 
     # --- 대구 1/2/3호선(대구교통공사, 비코레일) — 물리적 환승역(대구역·동대구역·
-    #     서대구역)만 대경선과 자동 병합, 나머지는 완전 별도 station_groups ---
+    #     서대구역)만 대경선과 자동 병합, 나머지는 완전 별도 station_groups.
+    #     평일/토요일/휴일 3종 다이어의 '휴일'은 일요일 전용인데, 국철·1호선 등
+    #     2종 다이어(평일/휴일=토+일)의 '휴일'과 문자열이 같아 그대로 두면
+    #     먼저 INSERT된 쪽(토+일)에 덮여 일요일 전용 트립이 토요일에도 잘못
+    #     노출된다 — 3종 다이어 계열(대구·부산·광주1호선)에서만 SUN_ONLY_LABEL로
+    #     구분해 별도 calendar 행으로 분리한다 ---
     for i, out_dir in enumerate(OUT_DAEGU, start=1):
         line_key = f"DAEGU{i}"
         dgm = {r["stop_id"]: add(r["name_ko"], LINE_OF[line_key],
@@ -462,7 +476,7 @@ def main():
         for t in rd(f"{out_dir}/trips.csv"):
             cur.execute("INSERT INTO trips VALUES(?,?,?,?,?,?,?,?,?,?)",
                         (f"DG{i}#" + t["trip_id"], t["train_no"], t["line_name"], t["formation"],
-                         t["direction"], t["service_id"], dgm.get(t["origin"], t["origin"]),
+                         t["direction"], SUN_ONLY_LABEL(t["service_id"]), dgm.get(t["origin"], t["origin"]),
                          dgm.get(t["destination"], t["destination"]), t["next_train_no"], line_key))
         for st in rd(f"{out_dir}/stop_times.csv"):
             cur.execute("INSERT INTO stop_times VALUES(?,?,?,?,?,?)",
@@ -472,7 +486,7 @@ def main():
                          int(st["dep_sec"]) if st["dep_sec"] else None, st["stop_type"]))
         for r in rd(f"{out_dir}/calendar.csv"):
             cur.execute("INSERT OR IGNORE INTO calendar VALUES(?,?,?,?,?,?,?,?)",
-                        (r["service_id"], r["mon"], r["tue"], r["wed"],
+                        (SUN_ONLY_LABEL(r["service_id"]), r["mon"], r["tue"], r["wed"],
                          r["thu"], r["fri"], r["sat"], r["sun"]))
 
     # --- 대전 1호선(대전교통공사, 비코레일) — "출발역 기준 배차표" 원본이라
@@ -512,7 +526,7 @@ def main():
         for t in rd(f"{out_dir}/trips.csv"):
             cur.execute("INSERT INTO trips VALUES(?,?,?,?,?,?,?,?,?,?)",
                         (f"BS{i}#" + t["trip_id"], t["train_no"], t["line_name"], t["formation"],
-                         t["direction"], t["service_id"], bsm.get(t["origin"], t["origin"]),
+                         t["direction"], SUN_ONLY_LABEL(t["service_id"]), bsm.get(t["origin"], t["origin"]),
                          bsm.get(t["destination"], t["destination"]), t["next_train_no"], line_key))
         for st in rd(f"{out_dir}/stop_times.csv"):
             cur.execute("INSERT INTO stop_times VALUES(?,?,?,?,?,?)",
@@ -522,7 +536,7 @@ def main():
                          int(st["dep_sec"]) if st["dep_sec"] else None, st["stop_type"]))
         for r in rd(f"{out_dir}/calendar.csv"):
             cur.execute("INSERT OR IGNORE INTO calendar VALUES(?,?,?,?,?,?,?,?)",
-                        (r["service_id"], r["mon"], r["tue"], r["wed"],
+                        (SUN_ONLY_LABEL(r["service_id"]), r["mon"], r["tue"], r["wed"],
                          r["thu"], r["fri"], r["sat"], r["sun"]))
 
     # --- 부산김해경전철(비코레일) — 사상(부산2호선)·대저(부산3호선) 실제 환승역만
@@ -730,6 +744,36 @@ def main():
                         (r["service_id"], r["mon"], r["tue"], r["wed"],
                          r["thu"], r["fri"], r["sat"], r["sun"]))
 
+    # --- 광주 도시철도 1호선(광주교통공사, 비코레일, 웹크롤링 소스) — "역당 시각
+    #     1개" 구조라 김포골드라인과 같은 해석 규칙. 광주송정역은 KTX·일반열차
+    #     '광주송정'과 실제 환승역이라 merge_key로 병합, 화정·운천은 수도권
+    #     노선(일산선·경의선)의 동명역과 무관해 merge_key로 분리. 평일/토요일/
+    #     휴일/명절 4종 다이어 중 명절은 날짜기반이라 calendar에 요일 매핑 없음
+    #     (calendar_dates류 예외 처리 필요, 다른 노선 캐비어트와 동일) ---
+    gjm = {r["stop_id"]: add(r["name_ko"], LINE_OF["GWANGJU1"],
+                             merge_key=r.get("merge_key") or None)
+           for r in rd(f"{OUT_GWANGJU1}/stops.csv")}
+    for t in rd(f"{OUT_GWANGJU1}/trips.csv"):
+        cur.execute("INSERT INTO trips VALUES(?,?,?,?,?,?,?,?,?,?)",
+                    ("GJ1#" + t["trip_id"], t["train_no"], t["line_name"], t["formation"],
+                     t["direction"], SUN_ONLY_LABEL(t["service_id"]), gjm[t["origin"]], gjm[t["destination"]],
+                     "", "GWANGJU1"))
+    rows = sorted(rd(f"{OUT_GWANGJU1}/stop_times.csv"),
+                  key=lambda r: (r["trip_id"], int(r["stop_seq"])))
+    for tid, grp in itertools.groupby(rows, key=lambda r: r["trip_id"]):
+        g = list(grp)
+        for i, s in enumerate(g):
+            kind = "origin" if i == 0 else ("destination" if i == len(g) - 1 else "stop")
+            sec = int(s["dep_sec"])
+            cur.execute("INSERT INTO stop_times VALUES(?,?,?,?,?,?)",
+                        ("GJ1#" + tid, int(s["stop_seq"]), gjm[s["stop_id"]],
+                         sec if kind == "destination" else None,
+                         None if kind == "destination" else sec, kind))
+    for r in rd(f"{OUT_GWANGJU1}/calendar.csv"):
+        cur.execute("INSERT OR IGNORE INTO calendar VALUES(?,?,?,?,?,?,?,?)",
+                    (SUN_ONLY_LABEL(r["service_id"]), r["mon"], r["tue"], r["wed"],
+                     r["thu"], r["fri"], r["sat"], r["sun"]))
+
     cur.executescript("""
     CREATE INDEX idx_st ON stop_times(stop_id, dep_sec);
     CREATE INDEX idx_tr ON stop_times(trip_id, stop_seq);
@@ -838,6 +882,26 @@ def main():
                         "빈 리스트라 휴일 시각표는 아직 미공개로 판단, 평일만 반영. 대곡· "
                         "연신내·수서·성남·구성·동탄은 기존 노선과 실제 환승역으로 자동 "
                         "병합, 서울역은 표기가 달라 merge_key로 기존 '서울'과 명시적 병합"),
+        ("source_gwangju1", "광주 도시철도 1호선(광주교통공사, 비코레일) 시각표. 공식 "
+                            "사이버스테이션(grtc.co.kr/cyber)에서 역별 '열차시각표' 탭의 "
+                            "DOM(class=pd/nd, 평일/토요일/휴일/명절 4종 다이어)을 직접 읽어 "
+                            "20개 역 전부 확보. 원본이 '역당 시각 1개' 구조라 김포골드라인과 "
+                            "같은 해석 규칙, 분(分) 단위 정밀도만 제공. 대부분 열차는 소태에서 "
+                            "종착하고 일부만 녹동까지 연장 운행 — 사이버스테이션이 이 분기를 "
+                            "이미 CSS class로 표시해 둬(색상 정보를 따로 파싱할 필요 없이) "
+                            "재구성 시 그대로 반영했다. 광주송정역은 KTX·일반열차 '광주송정'과 "
+                            "실제 환승역이라 merge_key로 병합, 화정·운천은 수도권 노선(일산선· "
+                            "경의선)의 동명역과 무관해 merge_key로 분리. 명절 다이어는 요일이 "
+                            "아니라 날짜 기반이라 calendar에 매핑 못 함(calendar_dates류 예외 "
+                            "처리 필요, 다른 노선 캐비어트와 동일)"),
+        ("caveat_sun_only_calendar", "평일/토요일/휴일 3종 다이어 노선(대구·부산·광주1호선)의 "
+                                     "'휴일'은 일요일 전용인데, 국철·1호선 등 2종 다이어(평일/ "
+                                     "휴일=토+일) 노선의 '휴일'과 이름이 같아 그대로 두면 먼저 "
+                                     "INSERT된 쪽에 덮여써 실제로는 항상 토+일 취급되고 있었다 "
+                                     "(2026-08-26, 광주1호선 반영 중 발견) — build_db.py의 "
+                                     "SUN_ONLY_LABEL()로 이 3개 노선의 '휴일'만 '휴일(일요일)'로 "
+                                     "분리해 고쳤다. 대구·부산도 이 커밋부터 정상화됨(기존 "
+                                     "trips 데이터 자체는 안 바뀌었고 calendar 매핑만 정정됨)"),
         ("station_model", "stops=노선별 승강장(수원(1호선) 등) / station_groups=역사(수원). 계통은 분리하지 않음."),
         ("station_merge_key", "여러 운영기관을 섞기 시작하면서(대구·대전·부산 등) 서로 무관한 "
                               "지역에 우연히 같은 역명이 존재하는 경우(예: 충남 논산 '연산' vs "
