@@ -55,6 +55,7 @@ OUT_GTXA_L09 = "tmp/out_gtxa_l09"
 OUT_GWANGJU1 = "tmp/out_gwangju1"
 OUT_INCHEON2 = "tmp/out_incheon2"
 OUT_YONGIN = "tmp/out_yongin"
+OUT_UIJEONGBU = "tmp/out_uijeongbu"
 DB = sys.argv[1] if len(sys.argv) > 1 else "output/kr_rail_timetable.sqlite"
 
 # 노선 단위로 승강장을 나눈다. 계통(경인/경부장항 등)은 나누지 않는다.
@@ -74,7 +75,7 @@ LINE_OF = {"KTX": "국철", "LINE1": "1호선", "SUIN_BUNDANG": "수인분당선
            "UI_SINSEOL": "우이신설선",
            "GTXA_L08": "GTX-A(운정~서울)", "GTXA_L09": "GTX-A(수서~동탄)",
            "GWANGJU1": "광주1호선", "INCHEON2": "인천2호선(추정)",
-           "YONGIN": "용인경전철(추정)"}
+           "YONGIN": "용인경전철(추정)", "UIJEONGBU": "의정부경전철"}
 # 1호선 원본이 지상/지하를 구분해 둔 이름은 노선 분리로 대체되므로 원래 이름으로 되돌린다
 UNSPLIT = {"서울(지하)": "서울", "청량리(지하)": "청량리"}
 
@@ -832,6 +833,34 @@ def main():
                     (r["service_id"], r["mon"], r["tue"], r["wed"],
                      r["thu"], r["fri"], r["sat"], r["sun"]))
 
+    # --- 의정부경전철(비코레일) — 운영사 홈페이지 역별 시각표 이미지를 직접
+    #     전사한 실측 데이터(인천2호선·용인경전철과 달리 배차간격 추정이
+    #     아님). 경전철의정부는 표기가 달라 기존 '의정부'(일반열차·1호선)와
+    #     merge_key로 명시적 병합, 회룡은 1호선과 이름이 같아 자동 병합 ---
+    ujm = {r["stop_id"]: add(r["name_ko"], LINE_OF["UIJEONGBU"],
+                             merge_key=r.get("merge_key") or None)
+           for r in rd(f"{OUT_UIJEONGBU}/stops.csv")}
+    for t in rd(f"{OUT_UIJEONGBU}/trips.csv"):
+        cur.execute("INSERT INTO trips VALUES(?,?,?,?,?,?,?,?,?,?)",
+                    ("UJ#" + t["trip_id"], t["train_no"], t["line_name"], t["formation"],
+                     t["direction"], t["service_id"], ujm[t["origin"]], ujm[t["destination"]],
+                     "", "UIJEONGBU"))
+    rows = sorted(rd(f"{OUT_UIJEONGBU}/stop_times.csv"),
+                  key=lambda r: (r["trip_id"], int(r["stop_seq"])))
+    for tid, grp in itertools.groupby(rows, key=lambda r: r["trip_id"]):
+        g = list(grp)
+        for i, s in enumerate(g):
+            kind = "origin" if i == 0 else ("destination" if i == len(g) - 1 else "stop")
+            sec = int(s["dep_sec"])
+            cur.execute("INSERT INTO stop_times VALUES(?,?,?,?,?,?)",
+                        ("UJ#" + tid, int(s["stop_seq"]), ujm[s["stop_id"]],
+                         sec if kind == "destination" else None,
+                         None if kind == "destination" else sec, kind))
+    for r in rd(f"{OUT_UIJEONGBU}/calendar.csv"):
+        cur.execute("INSERT OR IGNORE INTO calendar VALUES(?,?,?,?,?,?,?,?)",
+                    (r["service_id"], r["mon"], r["tue"], r["wed"],
+                     r["thu"], r["fri"], r["sat"], r["sun"]))
+
     cur.executescript("""
     CREATE INDEX idx_st ON stop_times(stop_id, dep_sec);
     CREATE INDEX idx_tr ON stop_times(trip_id, stop_seq);
@@ -978,6 +1007,17 @@ def main():
                               "단위로 어긋날 수 있고, 노선 중간의 단축운행(구간운행) 열차는 "
                               "반영되지 않는다 — 진행바 등 정밀 UI에는 부적합, '대략적인 배차 "
                               "안내' 용도로만 사용할 것"),
+        ("source_uijeongbu", "의정부경전철(비코레일) 시각표 — 운영사(ulrt.co.kr)가 엑셀을 "
+                            "배포하지 않아 역별 시각표 이미지(jpg) 29장을 직접 육안 전사(분 "
+                            "단위 정밀도, 인천2호선·용인경전철과 달리 배차간격 추정이 아니라 "
+                            "실측 시각표). 광주1호선의 소태/녹동 분기와 같은 구조(대부분 열차는 "
+                            "탑석에서 종착하고 일부만 차량기지임시승강장까지 연장) — 원본 "
+                            "이미지에 이 연장 열차가 다른 색으로 표시돼 있었으나 재구성에는 "
+                            "색상 대신 광주1호선과 동일한 이중 FIFO 재매칭 방식을 그대로 "
+                            "재사용했다(색상 플래그는 참고용으로만 원본 텍스트에 보존). "
+                            "경전철의정부는 표기가 달라 기존 '의정부'(일반열차·1호선)와 "
+                            "merge_key로 명시적 병합, 회룡은 1호선과 이름이 같아 자동 병합. "
+                            "평일/휴일(토+일) 2종 다이어만 존재"),
         ("station_model", "stops=노선별 승강장(수원(1호선) 등) / station_groups=역사(수원). 계통은 분리하지 않음."),
         ("station_merge_key", "여러 운영기관을 섞기 시작하면서(대구·대전·부산 등) 서로 무관한 "
                               "지역에 우연히 같은 역명이 존재하는 경우(예: 충남 논산 '연산' vs "
