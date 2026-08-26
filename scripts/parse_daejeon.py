@@ -25,6 +25,9 @@ import sys
 from collections import OrderedDict
 from openpyxl import load_workbook
 
+sys.path.insert(0, os.path.dirname(__file__))
+from _station_list_reconstruct import link_trips  # noqa: E402
+
 SRC = sys.argv[1] if len(sys.argv) > 1 else "RAW/대전 열차운행시각표(2026.3.30.).xlsx"
 OUT = sys.argv[2] if len(sys.argv) > 2 else "tmp/out_daejeon"
 
@@ -81,36 +84,6 @@ def parse_blocks(ws):
     return blocks
 
 
-def link_trips(blocks):
-    """역 블록별 발차시각 목록을 FIFO 그리디 매칭으로 이어 붙여 열차 단위 trip 복원."""
-    active = [[(0, t)] for t in blocks[0][1]]
-    finished = []
-    for block_idx in range(1, len(blocks)):
-        times = blocks[block_idx][1]
-        new_active = []
-        ai = 0
-        for t in times:
-            matched = False
-            while ai < len(active):
-                last_t = active[ai][-1][1]
-                if t - last_t > MAX_HOP_MIN:
-                    finished.append(active[ai])
-                    ai += 1
-                    continue
-                if t >= last_t:
-                    active[ai].append((block_idx, t))
-                    new_active.append(active[ai])
-                    ai += 1
-                    matched = True
-                break
-            if not matched:
-                new_active.append([(block_idx, t)])
-        finished.extend(active[ai:])
-        active = new_active
-    finished.extend(active)
-    return finished
-
-
 def main():
     wb = load_workbook(SRC, data_only=True)
 
@@ -129,7 +102,7 @@ def main():
         if resolve(terminus) not in stops:
             stops[resolve(terminus)] = f"DJS{len(stops) + 1:04d}"
 
-        chains = link_trips(blocks)
+        chains = link_trips(blocks, MAX_HOP_MIN)
         for chain in chains:
             if len(chain) < 2:
                 continue

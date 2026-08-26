@@ -47,6 +47,7 @@ SEOUL_PREFIX = {"SEOUL2": "S2", "SEOUL5": "S5", "SEOUL6": "S6",
                 "SEOUL7": "S7", "SEOUL8": "S8", "SEOUL9": "S9"}
 OUT_INCHEON1 = "tmp/out_incheon1"
 OUT_AIRPORT_RAILROAD = "tmp/out_airport_railroad"
+OUT_GIMPO_GOLDLINE = "tmp/out_gimpo_goldline"
 DB = sys.argv[1] if len(sys.argv) > 1 else "output/kr_rail_timetable.sqlite"
 
 # 노선 단위로 승강장을 나눈다. 계통(경인/경부장항 등)은 나누지 않는다.
@@ -61,7 +62,8 @@ LINE_OF = {"KTX": "국철", "LINE1": "1호선", "SUIN_BUNDANG": "수인분당선
            "BUSAN4": "부산4호선", "BUSAN_GIMHAE": "부산김해경전철",
            "SEOUL2": "2호선", "SEOUL5": "5호선", "SEOUL6": "6호선",
            "SEOUL7": "7호선", "SEOUL8": "8호선", "SEOUL9": "9호선",
-           "INCHEON1": "인천1호선", "AREX": "공항철도"}
+           "INCHEON1": "인천1호선", "AREX": "공항철도",
+           "GIMPO_GOLDLINE": "김포골드라인"}
 # 1호선 원본이 지상/지하를 구분해 둔 이름은 노선 분리로 대체되므로 원래 이름으로 되돌린다
 UNSPLIT = {"서울(지하)": "서울", "청량리(지하)": "청량리"}
 
@@ -605,6 +607,33 @@ def main():
                      int(st["arr_sec"]) if st["arr_sec"] else None,
                      int(st["dep_sec"]) if st["dep_sec"] else None, st["stop_type"]))
     for r in rd(f"{OUT_AIRPORT_RAILROAD}/calendar.csv"):
+        cur.execute("INSERT OR IGNORE INTO calendar VALUES(?,?,?,?,?,?,?,?)",
+                    (r["service_id"], r["mon"], r["tue"], r["wed"],
+                     r["thu"], r["fri"], r["sat"], r["sun"]))
+
+    # --- 김포골드라인(비코레일, 웹크롤링 소스) — "역당 시각 1개" 구조라 KTX와
+    #     같은 해석 규칙. 김포공항에서 공항철도·5·9호선·서해선(전동)과 실제
+    #     환승역으로 자동 병합 ---
+    ggm = {r["stop_id"]: add(r["name_ko"], LINE_OF["GIMPO_GOLDLINE"],
+                             merge_key=r.get("merge_key") or None)
+           for r in rd(f"{OUT_GIMPO_GOLDLINE}/stops.csv")}
+    for t in rd(f"{OUT_GIMPO_GOLDLINE}/trips.csv"):
+        cur.execute("INSERT INTO trips VALUES(?,?,?,?,?,?,?,?,?,?)",
+                    ("GGL#" + t["trip_id"], t["train_no"], t["line_name"], t["formation"],
+                     t["direction"], t["service_id"], ggm[t["origin"]], ggm[t["destination"]],
+                     "", "GIMPO_GOLDLINE"))
+    rows = sorted(rd(f"{OUT_GIMPO_GOLDLINE}/stop_times.csv"),
+                  key=lambda r: (r["trip_id"], int(r["stop_seq"])))
+    for tid, grp in itertools.groupby(rows, key=lambda r: r["trip_id"]):
+        g = list(grp)
+        for i, s in enumerate(g):
+            kind = "origin" if i == 0 else ("destination" if i == len(g) - 1 else "stop")
+            sec = int(s["dep_sec"])
+            cur.execute("INSERT INTO stop_times VALUES(?,?,?,?,?,?)",
+                        ("GGL#" + tid, int(s["stop_seq"]), ggm[s["stop_id"]],
+                         sec if kind == "destination" else None,
+                         None if kind == "destination" else sec, kind))
+    for r in rd(f"{OUT_GIMPO_GOLDLINE}/calendar.csv"):
         cur.execute("INSERT OR IGNORE INTO calendar VALUES(?,?,?,?,?,?,?,?)",
                     (r["service_id"], r["mon"], r["tue"], r["wed"],
                      r["thu"], r["fri"], r["sat"], r["sun"]))
