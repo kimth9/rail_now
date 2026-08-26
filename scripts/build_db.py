@@ -49,6 +49,7 @@ OUT_INCHEON1 = "tmp/out_incheon1"
 OUT_AIRPORT_RAILROAD = "tmp/out_airport_railroad"
 OUT_GIMPO_GOLDLINE = "tmp/out_gimpo_goldline"
 OUT_SILLIM = "tmp/out_sillim"
+OUT_UI_SINSEOL = "tmp/out_ui_sinseol"
 DB = sys.argv[1] if len(sys.argv) > 1 else "output/kr_rail_timetable.sqlite"
 
 # 노선 단위로 승강장을 나눈다. 계통(경인/경부장항 등)은 나누지 않는다.
@@ -64,7 +65,8 @@ LINE_OF = {"KTX": "국철", "LINE1": "1호선", "SUIN_BUNDANG": "수인분당선
            "SEOUL2": "2호선", "SEOUL5": "5호선", "SEOUL6": "6호선",
            "SEOUL7": "7호선", "SEOUL8": "8호선", "SEOUL9": "9호선",
            "INCHEON1": "인천1호선", "AREX": "공항철도",
-           "GIMPO_GOLDLINE": "김포골드라인", "SILLIM": "신림선"}
+           "GIMPO_GOLDLINE": "김포골드라인", "SILLIM": "신림선",
+           "UI_SINSEOL": "우이신설선"}
 # 1호선 원본이 지상/지하를 구분해 둔 이름은 노선 분리로 대체되므로 원래 이름으로 되돌린다
 UNSPLIT = {"서울(지하)": "서울", "청량리(지하)": "청량리"}
 
@@ -666,6 +668,33 @@ def main():
                     (r["service_id"], r["mon"], r["tue"], r["wed"],
                      r["thu"], r["fri"], r["sat"], r["sun"]))
 
+    # --- 우이신설선(우이신설경전철, 비코레일, 웹크롤링 소스) — "역당 시각 1개"
+    #     구조라 신림선과 같은 해석 규칙. 성신여대입구(안산과천선)·보문(6호선)·
+    #     신설동(1호선)에서 실제 환승역으로 자동 병합 ---
+    uim = {r["stop_id"]: add(r["name_ko"], LINE_OF["UI_SINSEOL"],
+                             merge_key=r.get("merge_key") or None)
+           for r in rd(f"{OUT_UI_SINSEOL}/stops.csv")}
+    for t in rd(f"{OUT_UI_SINSEOL}/trips.csv"):
+        cur.execute("INSERT INTO trips VALUES(?,?,?,?,?,?,?,?,?,?)",
+                    ("UI#" + t["trip_id"], t["train_no"], t["line_name"], t["formation"],
+                     t["direction"], t["service_id"], uim[t["origin"]], uim[t["destination"]],
+                     "", "UI_SINSEOL"))
+    rows = sorted(rd(f"{OUT_UI_SINSEOL}/stop_times.csv"),
+                  key=lambda r: (r["trip_id"], int(r["stop_seq"])))
+    for tid, grp in itertools.groupby(rows, key=lambda r: r["trip_id"]):
+        g = list(grp)
+        for i, s in enumerate(g):
+            kind = "origin" if i == 0 else ("destination" if i == len(g) - 1 else "stop")
+            sec = int(s["dep_sec"])
+            cur.execute("INSERT INTO stop_times VALUES(?,?,?,?,?,?)",
+                        ("UI#" + tid, int(s["stop_seq"]), uim[s["stop_id"]],
+                         sec if kind == "destination" else None,
+                         None if kind == "destination" else sec, kind))
+    for r in rd(f"{OUT_UI_SINSEOL}/calendar.csv"):
+        cur.execute("INSERT OR IGNORE INTO calendar VALUES(?,?,?,?,?,?,?,?)",
+                    (r["service_id"], r["mon"], r["tue"], r["wed"],
+                     r["thu"], r["fri"], r["sat"], r["sun"]))
+
     cur.executescript("""
     CREATE INDEX idx_st ON stop_times(stop_id, dep_sec);
     CREATE INDEX idx_tr ON stop_times(trip_id, stop_seq);
@@ -756,6 +785,14 @@ def main():
                           "보라매(7호선)·샛강(9호선)에서 실제 환승역으로 자동 병합, "
                           "대방(성애병원)은 1호선 '대방'과 merge_key로 병합(부제만 다름). "
                           "괄호 등 목적지 분기 표기 없음(전 역 확인, 단일 종점 노선)"),
+        ("source_ui_sinseol", "우이신설선(우이신설경전철, 비코레일) 시각표. 운영사가 엑셀을 "
+                              "배포하지 않아 공식 홈페이지(ui-line.com)의 역별 페이지 13개를 "
+                              "크롤링. 역 링크가 `javascript:f_route()` 형태였지만 실제로는 "
+                              "단순 페이지 이동이라 curl 정적 GET으로 확보(브라우저 자동화 "
+                              "불필요). 원본이 '역당 시각 1개' 구조라 신림선과 같은 해석 규칙, "
+                              "분(分) 단위 정밀도만 제공. daytype이 평일/주말 2종뿐(토요일 "
+                              "별도 없음). 성신여대입구(안산과천선)·보문(6호선)·신설동(1호선)"
+                              "에서 실제 환승역으로 자동 병합. 목적지 분기 표기 없음(전 역 확인)"),
         ("station_model", "stops=노선별 승강장(수원(1호선) 등) / station_groups=역사(수원). 계통은 분리하지 않음."),
         ("station_merge_key", "여러 운영기관을 섞기 시작하면서(대구·대전·부산 등) 서로 무관한 "
                               "지역에 우연히 같은 역명이 존재하는 경우(예: 충남 논산 '연산' vs "
