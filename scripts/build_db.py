@@ -56,6 +56,7 @@ OUT_GWANGJU1 = "tmp/out_gwangju1"
 OUT_INCHEON2 = "tmp/out_incheon2"
 OUT_YONGIN = "tmp/out_yongin"
 OUT_UIJEONGBU = "tmp/out_uijeongbu"
+OUT_SINBUNDANG = "tmp/out_sinbundang"
 DB = sys.argv[1] if len(sys.argv) > 1 else "output/kr_rail_timetable.sqlite"
 
 # 노선 단위로 승강장을 나눈다. 계통(경인/경부장항 등)은 나누지 않는다.
@@ -75,7 +76,8 @@ LINE_OF = {"KTX": "국철", "LINE1": "1호선", "SUIN_BUNDANG": "수인분당선
            "UI_SINSEOL": "우이신설선",
            "GTXA_L08": "GTX-A(운정~서울)", "GTXA_L09": "GTX-A(수서~동탄)",
            "GWANGJU1": "광주1호선", "INCHEON2": "인천2호선(추정)",
-           "YONGIN": "용인경전철(추정)", "UIJEONGBU": "의정부경전철"}
+           "YONGIN": "용인경전철(추정)", "UIJEONGBU": "의정부경전철",
+           "SINBUNDANG": "신분당선"}
 # 1호선 원본이 지상/지하를 구분해 둔 이름은 노선 분리로 대체되므로 원래 이름으로 되돌린다
 UNSPLIT = {"서울(지하)": "서울", "청량리(지하)": "청량리"}
 
@@ -861,6 +863,34 @@ def main():
                     (r["service_id"], r["mon"], r["tue"], r["wed"],
                      r["thu"], r["fri"], r["sat"], r["sun"]))
 
+    # --- 신분당선(네오트랜스) — 평일은 PDF 역별 시각표, 휴일은 PNG(스크린샷)를
+    #     Claude가 직접 읽어 전사. 강남·양재(3호선 계통)·신사(3호선)·판교(국철·
+    #     경강선)·정자·미금(수인분당선)은 실제 환승역으로 이름 그대로 자동
+    #     병합, 동천은 대구3호선 동명역과 무관해 merge_key로 분리 ---
+    sinbm = {r["stop_id"]: add(r["name_ko"], LINE_OF["SINBUNDANG"],
+                               merge_key=r.get("merge_key") or None)
+             for r in rd(f"{OUT_SINBUNDANG}/stops.csv")}
+    for t in rd(f"{OUT_SINBUNDANG}/trips.csv"):
+        cur.execute("INSERT INTO trips VALUES(?,?,?,?,?,?,?,?,?,?)",
+                    ("SBD#" + t["trip_id"], t["train_no"], t["line_name"], t["formation"],
+                     t["direction"], t["service_id"], sinbm[t["origin"]], sinbm[t["destination"]],
+                     "", "SINBUNDANG"))
+    rows = sorted(rd(f"{OUT_SINBUNDANG}/stop_times.csv"),
+                  key=lambda r: (r["trip_id"], int(r["stop_seq"])))
+    for tid, grp in itertools.groupby(rows, key=lambda r: r["trip_id"]):
+        g = list(grp)
+        for i, s in enumerate(g):
+            kind = "origin" if i == 0 else ("destination" if i == len(g) - 1 else "stop")
+            sec = int(s["dep_sec"])
+            cur.execute("INSERT INTO stop_times VALUES(?,?,?,?,?,?)",
+                        ("SBD#" + tid, int(s["stop_seq"]), sinbm[s["stop_id"]],
+                         sec if kind == "destination" else None,
+                         None if kind == "destination" else sec, kind))
+    for r in rd(f"{OUT_SINBUNDANG}/calendar.csv"):
+        cur.execute("INSERT OR IGNORE INTO calendar VALUES(?,?,?,?,?,?,?,?)",
+                    (r["service_id"], r["mon"], r["tue"], r["wed"],
+                     r["thu"], r["fri"], r["sat"], r["sun"]))
+
     cur.executescript("""
     CREATE INDEX idx_st ON stop_times(stop_id, dep_sec);
     CREATE INDEX idx_tr ON stop_times(trip_id, stop_seq);
@@ -1018,6 +1048,21 @@ def main():
                             "경전철의정부는 표기가 달라 기존 '의정부'(일반열차·1호선)와 "
                             "merge_key로 명시적 병합, 회룡은 1호선과 이름이 같아 자동 병합. "
                             "평일/휴일(토+일) 2종 다이어만 존재"),
+        ("source_sinbundang", "신분당선(네오트랜스) 시각표 — 계획 문서 8단계(마지막), RAW에 "
+                              "xlsx가 없다. 평일은 PDF(16개 역, 역당 1페이지, pdfplumber로 "
+                              "직접 파싱)이고 휴일은 PNG(843x9537 세로 스크린샷)라 Claude가 "
+                              "직접 8등분해 읽어 전사했다 — 평일/휴일 기준일이 2.5년 이상 "
+                              "차이난다(2025-01 vs 2022-05). 역간 간격이 균일하지 않아(청계산"
+                              "입구~판교만 6~7분, 나머지는 1~4분, 최소 배차간격 4분) 공유 "
+                              "link_trips()의 단일 max_hop 대신 이 노선 전용으로 구간별 다른 "
+                              "max_hop을 쓰는 재구성 로직을 별도로 작성했다. 정자 단축종착 "
+                              "분기(하행 전용, 원본에 '(정자)' 표시)는 판교까지는 정상 재구성한 "
+                              "뒤 표시된 것만 정자에서 확정 종착시키는 방식으로 처리. 정자역은 "
+                              "일부 열차의 실제 중간 시발점(정자 자체 하행 기록이 판교보다도 "
+                              "이른 시각을 포함)임을 데이터에서 확인. 강남·양재(3호선 계통)·"
+                              "신사(3호선)·판교(국철·경강선)·정자·미금(수인분당선)은 실제 "
+                              "환승역으로 자동 병합, 동천은 대구3호선 동명역과 무관해 "
+                              "merge_key로 분리"),
         ("station_model", "stops=노선별 승강장(수원(1호선) 등) / station_groups=역사(수원). 계통은 분리하지 않음."),
         ("station_merge_key", "여러 운영기관을 섞기 시작하면서(대구·대전·부산 등) 서로 무관한 "
                               "지역에 우연히 같은 역명이 존재하는 경우(예: 충남 논산 '연산' vs "
