@@ -5,9 +5,11 @@
   - 시트 = 노선계통_요일_방향 (경부장항/서동탄-의정부/경인/경인급행/광명셔틀 x 상·하)
   - '서울급행' 시트는 조정안-현행 비교표라 시각표 아님 -> 제외
   - 전치 구조: 역 = 행, 열차 = 열
-  - A열 1~3행: 시발역 / 종착역 / 열차번호
-  - A열 4행부터 역이 2행 단위: (역명 행)=도착, (다음 행)=출발
-  - 마지막 역 라벨 '연계열번' = 종착 후 이어받는 열차번호
+  - 2026.9.1 개정부터 전 시트가 '조정안(신규)+현행(개정전)' 대조표로 바뀌어 컬럼이
+    1칸 밀렸다(역명 2열, 열차 데이터 3열부터). 헤더도 2열 기준(시발역/종착역/열차번호).
+    조정안 블록만 읽고 '현행' 행부터는 무시한다(_revision_table.py).
+  - B열 헤더 다음 행부터 역이 2행 단위: (역명 행)=도착, (다음 행)=출발
+  - '연계열번' 행이 이번 개정부터 사라짐(코레일이 원본에서 제외) -> next_train_no 공란
   - 셀 패턴 의미:
       -D  첫 역   -> 시발 (출발만)
       AD  중간역  -> 정차
@@ -22,12 +24,17 @@ import sys
 from collections import OrderedDict
 from openpyxl import load_workbook
 
-SRC = sys.argv[1] if len(sys.argv) > 1 else "/mnt/user-data/uploads/2026022319c8818dfa4360.xlsx"
-OUT = sys.argv[2] if len(sys.argv) > 2 else "/home/claude/out_line1"
+from _revision_table import find_header_row, find_boundary_row, \
+    collect_station_rows, find_link_row
+
+SRC = sys.argv[1] if len(sys.argv) > 1 else "RAW/korail_시각표_20260901/1호선_평일_시각표_20260901.xlsx"
+OUT = sys.argv[2] if len(sys.argv) > 2 else "tmp/out_line1"
+
+STATION_COL = 2
 
 SKIP_SHEETS = {"서울급급행", "서울급행",
                # 경인급행은 별도 파일(parse_gyeongin_express.py, 2026.5.26.부터 갱신본)로
-               # 대체됐다. 이 파일(2026.2.28.부터)의 경인급행 시트는 더 오래된 데이터라 제외.
+               # 대체됐다. 이 파일의 경인급행 시트는 더 오래된 데이터라 제외.
                "경인급행_평일_상", "경인급행_평일_하", "경인급행_휴일_상", "경인급행_휴일_하"}
 NOT_A_STATION = {"연계열번"}
 
@@ -93,14 +100,15 @@ def main():
         daytype = parts[1] if len(parts) > 2 else "평일"
         direction = "up" if sheet.endswith("_상") else "down"
 
-        # 역 행 위치 수집 (2행 단위)
+        header_row = find_header_row(ws, STATION_COL)
+        boundary_row = find_boundary_row(ws, header_row)
+
+        # 역 행 위치 수집 (2행 단위, 조정안 블록만)
         st_rows = []
-        for r in range(4, ws.max_row + 1):
-            label = clean(ws.cell(r, 1).value)
-            if not label or label in NOT_A_STATION:
-                continue
-            if label in JUNCTIONS:
-                st_rows.append((r, "@" + JUNCTIONS[label]))
+        for r, label in collect_station_rows(ws, STATION_COL, header_row, boundary_row,
+                                              NOT_A_STATION, JUNCTIONS):
+            if label.startswith("@"):
+                st_rows.append((r, label))
                 continue
             name, vf = resolve(label)
             if name not in stops:
@@ -108,11 +116,10 @@ def main():
                 stop_verify[name] = (label, vf)
             st_rows.append((r, name))
 
-        link_row = next((r for r in range(4, ws.max_row + 1)
-                         if "연계" in clean(ws.cell(r, 1).value)), None)
+        link_row = find_link_row(ws, STATION_COL, header_row, boundary_row)
 
-        for c in range(2, ws.max_column + 1):
-            train_no = clean(ws.cell(3, c).value)
+        for c in range(STATION_COL + 1, ws.max_column + 1):
+            train_no = clean(ws.cell(header_row, c).value)
             if not train_no:
                 continue
 

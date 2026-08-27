@@ -4,7 +4,12 @@
 2행(도착/출발) + '연계열번' 꼬리 행)
 
 입력 구조 (관측):
-  - 시트 = 서해선 상행(평일) / 하행(평일) / 상행(휴일) / 하행(휴일)
+  - 2026.9.1 개정부터 경의중앙선·경의선·경춘선·서해선·ITX-청춘 5개 노선이 파일
+    2개(평일/휴일)로 합본됐다(예전엔 노선별 별도 파일). 시트 이름도 요일 접미사가
+    빠져 "서해선 상행" / "서해선 하행"으로 단순화(요일 구분은 파일 단위).
+  - 전 시트가 '조정안(신규)+현행(개정전)' 대조표로 바뀌어 컬럼이 1칸 밀렸다
+    (역명 2열, 열차 데이터 3열부터). 조정안 블록만 읽는다(_revision_table.py).
+    '연계열번' 행도 이번 개정부터 사라짐 -> next_train_no 공란.
   - 역 목록이 원시~일산(21개 라벨)까지만 실제 시각이 있고, 그 뒤로 탄현~판문
     (경의선 문산 방면 12개 역)이 전부 빈 셀로 남아있다 — 이 파일이 경의선 파일과
     같은 템플릿을 재사용해 만들어지면서 꼬리 행을 안 지운 것으로 보인다. 시각이
@@ -34,13 +39,20 @@ import sys
 from collections import OrderedDict
 from openpyxl import load_workbook
 
-SRC = sys.argv[1] if len(sys.argv) > 1 else "RAW/korail_시각표_20260825/서해선_전동열차_20260420부터.xlsx"
-OUT = sys.argv[2] if len(sys.argv) > 2 else "tmp/out_seohae"
+from _revision_table import find_header_row, find_boundary_row, find_link_row
 
-SHEETS = {
-    "서해선 상행(평일)": ("평일", "up"), "서해선 하행(평일)": ("평일", "down"),
-    "서해선 상행(휴일)": ("휴일", "up"), "서해선 하행(휴일)": ("휴일", "down"),
-}
+SRC_WEEKDAY = sys.argv[1] if len(sys.argv) > 1 else \
+    "RAW/korail_시각표_20260901/경의중앙선_경의선_경춘선_서해선_평일_시각표_20260901.xlsx"
+SRC_HOLIDAY = sys.argv[2] if len(sys.argv) > 2 else \
+    "RAW/korail_시각표_20260901/경의중앙선_경의선_경춘선_서해선_휴일_시각표_20260901.xlsx"
+OUT = sys.argv[3] if len(sys.argv) > 3 else "tmp/out_seohae"
+
+STATION_COL = 2
+
+SHEETS = [
+    (SRC_WEEKDAY, "서해선 상행", "평일", "up"), (SRC_WEEKDAY, "서해선 하행", "평일", "down"),
+    (SRC_HOLIDAY, "서해선 상행", "휴일", "up"), (SRC_HOLIDAY, "서해선 하행", "휴일", "down"),
+]
 
 NOT_A_STATION = {"연계열번"}
 
@@ -80,26 +92,27 @@ def resolve(label):
 
 
 def main():
-    wb = load_workbook(SRC, data_only=True)
+    wbs = {src: load_workbook(src, data_only=True) for src in {SRC_WEEKDAY, SRC_HOLIDAY}}
 
     stops, stop_verify = OrderedDict(), {}
     trips, stop_times = [], []
     warnings = []
 
-    for sheet, (daytype, direction) in SHEETS.items():
-        ws = wb[sheet]
+    for src, sheet, daytype, direction in SHEETS:
+        ws = wbs[src][sheet]
 
-        header_row = next(r for r in range(1, 6) if clean(ws.cell(r, 1).value) == "열차번호")
+        header_row = find_header_row(ws, STATION_COL)
+        boundary_row = find_boundary_row(ws, header_row)
 
         st_rows = []
-        for r in range(header_row + 1, ws.max_row + 1):
-            label = clean(ws.cell(r, 1).value)
+        for r in range(header_row + 1, boundary_row):
+            label = clean(ws.cell(r, STATION_COL).value)
             if not label or label in NOT_A_STATION:
                 continue
             # 탄현~판문(경의선 문산 방면) 꼬리 행 — 전 열차 시각이 비어있으면 애초에
-            # 이 노선의 실제 정차역이 아니라고 보고 등록하지 않는다.
+            # 이 노선의 실제 정차역이 아니라고 보고 등록하지 않는다(조정안 블록 안에서만 검사).
             has_data = any(is_time(ws.cell(r, c).value) or is_time(ws.cell(r + 1, c).value)
-                           for c in range(2, ws.max_column + 1))
+                           for c in range(STATION_COL + 1, ws.max_column + 1))
             if not has_data:
                 continue
             name, vf = resolve(label)
@@ -108,10 +121,9 @@ def main():
                 stop_verify[name] = (label, vf)
             st_rows.append((r, name))
 
-        link_row = next((r for r in range(header_row + 1, ws.max_row + 1)
-                         if "연계" in clean(ws.cell(r, 1).value)), None)
+        link_row = find_link_row(ws, STATION_COL, header_row, boundary_row)
 
-        for c in range(2, ws.max_column + 1):
+        for c in range(STATION_COL + 1, ws.max_column + 1):
             train_no = clean(ws.cell(header_row, c).value)
             if not train_no:
                 continue
@@ -141,7 +153,7 @@ def main():
                     row[i] = adj
                     prev = adj
 
-            trip_id = f"{sheet}#{train_no}"
+            trip_id = f"{sheet}#{daytype}#{train_no}"
             for seq, (name, a, d) in enumerate(raw, start=1):
                 if seq == 1:
                     kind = "origin"

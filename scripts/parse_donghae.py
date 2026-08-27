@@ -4,7 +4,9 @@
 
 입력 구조 (관측):
   - 시트 = 평일 상행 / 평일 하행 / 휴일 상행 / 휴일 하행 (공백 구분)
-  - 헤더는 다른 노선과 동일(3행: 시발역/종착역/열차번호, 4행부터 역). '연계열번' 있음.
+  - 2026.9.1 개정부터 전 시트가 '조정안(신규)+현행(개정전)' 대조표로 바뀌어 컬럼이
+    1칸 밀렸다(역명 2열, 열차 데이터 3열부터). 조정안 블록만 읽는다(_revision_table.py).
+    '연계열번' 행도 이번 개정부터 사라짐 -> next_train_no 공란.
   - 시종착이 '망양'인 열차가 섞여있다(부발/오이도처럼 차량기지 입출고용 중간
     시종착 — 나무위키에 "부전발 망양행 등은 차량기지 입출고로 존재"라고 명시됨).
   - 역명 절삭은 대부분 단순 3글자 프리픽스(`오시리`→오시리아, `신해운`→신해운대,
@@ -24,8 +26,13 @@ import sys
 from collections import OrderedDict
 from openpyxl import load_workbook
 
-SRC = sys.argv[1] if len(sys.argv) > 1 else "RAW/korail_시각표_20260825/동해선_전동열차_20260228부터.xlsx"
+from _revision_table import find_header_row, find_boundary_row, \
+    collect_station_rows, find_link_row
+
+SRC = sys.argv[1] if len(sys.argv) > 1 else "RAW/korail_시각표_20260901/동해선_전동열차_시각표_20260901.xlsx"
 OUT = sys.argv[2] if len(sys.argv) > 2 else "tmp/out_donghae"
+
+STATION_COL = 2
 
 SHEETS = {
     "평일 상행": ("평일", "up"), "평일 하행": ("평일", "down"),
@@ -82,15 +89,14 @@ def main():
     for sheet, (daytype, direction) in SHEETS.items():
         ws = wb[sheet]
 
-        header_row = next(r for r in range(1, 6) if clean(ws.cell(r, 1).value) == "열차번호")
+        header_row = find_header_row(ws, STATION_COL)
+        boundary_row = find_boundary_row(ws, header_row)
 
         st_rows = []
-        for r in range(header_row + 1, ws.max_row + 1):
-            label = clean(ws.cell(r, 1).value)
-            if not label or label in NOT_A_STATION:
-                continue
-            if label in JUNCTIONS:
-                st_rows.append((r, "@" + JUNCTIONS[label]))
+        for r, label in collect_station_rows(ws, STATION_COL, header_row, boundary_row,
+                                              NOT_A_STATION, JUNCTIONS):
+            if label.startswith("@"):
+                st_rows.append((r, label))
                 continue
             name, vf, mkey = resolve(label)
             if name not in stops:
@@ -98,10 +104,9 @@ def main():
                 stop_verify[name] = (label, vf, mkey or "")
             st_rows.append((r, name))
 
-        link_row = next((r for r in range(header_row + 1, ws.max_row + 1)
-                         if "연계" in clean(ws.cell(r, 1).value)), None)
+        link_row = find_link_row(ws, STATION_COL, header_row, boundary_row)
 
-        for c in range(2, ws.max_column + 1):
+        for c in range(STATION_COL + 1, ws.max_column + 1):
             train_no = clean(ws.cell(header_row, c).value)
             if not train_no:
                 continue

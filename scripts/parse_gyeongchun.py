@@ -2,13 +2,19 @@
 """경춘선 시각표 xlsx -> 정규화 테이블 (parse_gyeongui_jungang.py와 동일 스키마)
 
 입력 구조 (관측):
-  - 시트 = 경춘선 상행(평일) / 하행(평일) / 상행(휴일) / 하행(휴일) — 헤더는
-    경의중앙선과 동일(3행: 시발역/종착역/열차번호, 4행부터 역), 마지막 행 '연계열번'
-  - '광운대시종착(평일)' 시트가 별도로 있다. **한 시트 안에 방향이 다른 두 블록이
-    좌우로 나란히 붙어있는 특이 구조**: A열=상행(춘천→광운대, 2~3열),
-    E열=하행(광운대→춘천, 6~7열). 나무위키에 "춘천발 광운대행 열차는 평일에만
-    하루에 2회 운행한다"고 명시돼 있어 딱 맞는 편수(4편=상행2+하행2). 휴일에는
-    이 시트가 아예 없다(평일 한정 서비스).
+  - 2026.9.1 개정부터 경의중앙선·경의선·경춘선·서해선·ITX-청춘 5개 노선이 파일
+    2개(평일/휴일)로 합본됐다(예전엔 노선별 별도 파일). 시트 이름도 요일 접미사가
+    빠져 "경춘선 상행" / "경춘선 하행"으로 단순화(요일 구분은 파일 단위).
+  - 전 시트가 '조정안(신규)+현행(개정전)' 대조표로 바뀌어 컬럼이 1칸 밀렸다
+    (역명 2열, 열차 데이터 3열부터). 조정안 블록만 읽는다(_revision_table.py).
+    '연계열번' 행도 이번 개정부터 사라짐 -> next_train_no 공란.
+  - 옛 '광운대시종착(평일)' 시트(한 시트 안에 상행/하행이 좌우로 나란히 붙은 특이
+    구조)가 이번 개정부터 **'망우직결선 상행'/'망우직결선 하행' 2개 시트로
+    재구성됐다** — 다른 시트처럼 방향별로 분리돼 좌우 분할 로직이 더 이상 필요
+    없다. 편성 수(상행 2편+하행 2편=4편, 나무위키 "춘천발 광운대행은 평일 하루
+    2회"와 일치)와 평일 전용(휴일 파일엔 이 시트가 없음)이 옛 광운대시종착과
+    정확히 같아 신규 노선이 아니라 같은 서비스의 재구성으로 확정. line_id는
+    그대로 경춘선(GC)으로 편입한다.
   - 역명은 '평내호'→'평내호평' 1건만 복원하면 됨(나무위키 승하차 순위표로 확정,
     나머지는 전부 실명). 광운대는 1호선 소속 역이지만 망우선을 통해 경춘선과
     직결되는 실제 종점이라 그대로 사용.
@@ -20,17 +26,26 @@ import sys
 from collections import OrderedDict
 from openpyxl import load_workbook
 
-SRC = sys.argv[1] if len(sys.argv) > 1 else "RAW/korail_시각표_20260825/경춘선_전동열차_20260228부터.xlsx"
-OUT = sys.argv[2] if len(sys.argv) > 2 else "tmp/out_gyeongchun"
+from _revision_table import find_header_row, find_boundary_row, \
+    collect_station_rows, find_link_row
 
-# (시트, 요일, 방향, 역명 열, 데이터 열 범위)
+SRC_WEEKDAY = sys.argv[1] if len(sys.argv) > 1 else \
+    "RAW/korail_시각표_20260901/경의중앙선_경의선_경춘선_서해선_평일_시각표_20260901.xlsx"
+SRC_HOLIDAY = sys.argv[2] if len(sys.argv) > 2 else \
+    "RAW/korail_시각표_20260901/경의중앙선_경의선_경춘선_서해선_휴일_시각표_20260901.xlsx"
+OUT = sys.argv[3] if len(sys.argv) > 3 else "tmp/out_gyeongchun"
+
+STATION_COL = 2
+
+# (원본 파일, 시트, 요일, 방향) — 망우직결선(옛 광운대시종착)도 이제 다른 시트와
+# 동일한 레이아웃이라 좌우 분할 로직 없이 그대로 편입
 BLOCKS = [
-    ("경춘선 상행(평일)", "평일", "up", 1, None),
-    ("경춘선 하행(평일)", "평일", "down", 1, None),
-    ("경춘선 상행(휴일)", "휴일", "up", 1, None),
-    ("경춘선 하행(휴일)", "휴일", "down", 1, None),
-    ("광운대시종착(평일)", "평일", "up", 1, (2, 4)),      # 춘천 -> 광운대
-    ("광운대시종착(평일)", "평일", "down", 5, (6, 8)),     # 광운대 -> 춘천
+    (SRC_WEEKDAY, "경춘선 상행", "평일", "up"),
+    (SRC_WEEKDAY, "경춘선 하행", "평일", "down"),
+    (SRC_HOLIDAY, "경춘선 상행", "휴일", "up"),
+    (SRC_HOLIDAY, "경춘선 하행", "휴일", "down"),
+    (SRC_WEEKDAY, "망우직결선 상행", "평일", "up"),
+    (SRC_WEEKDAY, "망우직결선 하행", "평일", "down"),
 ]
 
 NOT_A_STATION = {"연계열번"}
@@ -64,25 +79,23 @@ def resolve(label):
 
 
 def main():
-    wb = load_workbook(SRC, data_only=True)
+    wbs = {src: load_workbook(src, data_only=True) for src in {SRC_WEEKDAY, SRC_HOLIDAY}}
 
     stops, stop_verify = OrderedDict(), {}
     trips, stop_times = [], []
     warnings = []
 
-    for sheet, daytype, direction, station_col, col_range in BLOCKS:
-        ws = wb[sheet]
+    for src, sheet, daytype, direction in BLOCKS:
+        ws = wbs[src][sheet]
 
-        header_row = next(r for r in range(1, 6)
-                           if clean(ws.cell(r, station_col).value) == "열차번호")
+        header_row = find_header_row(ws, STATION_COL)
+        boundary_row = find_boundary_row(ws, header_row)
 
         st_rows = []
-        for r in range(header_row + 1, ws.max_row + 1):
-            label = clean(ws.cell(r, station_col).value)
-            if not label or label in NOT_A_STATION:
-                continue
-            if label in JUNCTIONS:
-                st_rows.append((r, "@" + JUNCTIONS[label]))
+        for r, label in collect_station_rows(ws, STATION_COL, header_row, boundary_row,
+                                              NOT_A_STATION, JUNCTIONS):
+            if label.startswith("@"):
+                st_rows.append((r, label))
                 continue
             name, vf = resolve(label)
             if name not in stops:
@@ -90,11 +103,9 @@ def main():
                 stop_verify[name] = (label, vf)
             st_rows.append((r, name))
 
-        link_row = next((r for r in range(header_row + 1, ws.max_row + 1)
-                         if "연계" in clean(ws.cell(r, station_col).value)), None)
+        link_row = find_link_row(ws, STATION_COL, header_row, boundary_row)
 
-        c_start, c_end = col_range if col_range else (station_col + 1, ws.max_column)
-        for c in range(c_start, c_end + 1):
+        for c in range(STATION_COL + 1, ws.max_column + 1):
             train_no = clean(ws.cell(header_row, c).value)
             if not train_no or train_no == "열차번호":
                 continue
@@ -124,7 +135,7 @@ def main():
                     row[i] = adj
                     prev = adj
 
-            trip_id = f"{sheet}#{direction}#{train_no}"
+            trip_id = f"{sheet}#{daytype}#{direction}#{train_no}"
             for seq, (name, a, d) in enumerate(raw, start=1):
                 if seq == 1:
                     kind = "origin"
