@@ -3,7 +3,9 @@
 
 입력 구조 (관측):
   - 시트 = 노선계통_요일_방향 (경부장항/서동탄-의정부/경인/경인급행/광명셔틀 x 상·하)
-  - '서울급행' 시트는 조정안-현행 비교표라 시각표 아님 -> 제외
+  - '서울급행' 시트(평일 전용, K1902/K1904/K1945)는 조정안-현행 비교표지만 두 블록이
+    동일 데이터라 조정안 블록만 읽으면 됨. 다만 역=행 표가 좌(2열, 상행)/우(1열, 하행)
+    블록으로 나란히 있어 다른 시트와 레이아웃이 달라 main()에서 별도 처리.
   - 전치 구조: 역 = 행, 열차 = 열
   - 2026.9.1 개정부터 전 시트가 '조정안(신규)+현행(개정전)' 대조표로 바뀌어 컬럼이
     1칸 밀렸다(역명 2열, 열차 데이터 3열부터). 헤더도 2열 기준(시발역/종착역/열차번호).
@@ -32,7 +34,7 @@ OUT = sys.argv[2] if len(sys.argv) > 2 else "tmp/out_line1"
 
 STATION_COL = 2
 
-SKIP_SHEETS = {"서울급급행", "서울급행",
+SKIP_SHEETS = {"서울급급행",
                # 경인급행은 별도 파일(parse_gyeongin_express.py, 2026.5.26.부터 갱신본)로
                # 대체됐다. 이 파일의 경인급행 시트는 더 오래된 데이터라 제외.
                "경인급행_평일_상", "경인급행_평일_하", "경인급행_휴일_상", "경인급행_휴일_하"}
@@ -83,6 +85,87 @@ def resolve(label):
     return (label, "✔")
 
 
+def collect_stops(ws, station_col, header_row, boundary_row, stops, stop_verify):
+    """역명 열 하나를 스캔해 (행, 역명/분기점ID) 목록을 반환하고 stops를 채운다."""
+    st_rows = []
+    for r, label in collect_station_rows(ws, station_col, header_row, boundary_row,
+                                          NOT_A_STATION, JUNCTIONS):
+        if label.startswith("@"):
+            st_rows.append((r, label))
+            continue
+        name, vf = resolve(label)
+        if name not in stops:
+            stops[name] = f"S1{len(stops) + 1:04d}"
+            stop_verify[name] = (label, vf)
+        st_rows.append((r, name))
+    return st_rows
+
+
+def parse_trip_column(ws, c, header_row, st_rows, stops, sheet_label, line_name,
+                       direction, daytype, link_row, warnings, trips, stop_times):
+    """열 하나(=열차 1편)를 읽어 trips/stop_times에 append. 유효 정차 부족 시 False."""
+    train_no = clean(ws.cell(header_row, c).value)
+    if not train_no:
+        return False
+
+    raw = []
+    for r, name in st_rows:
+        a = to_sec(ws.cell(r, c).value)
+        d = to_sec(ws.cell(r + 1, c).value)
+        if a is None and d is None:
+            continue
+        raw.append([name, a, d])
+    if len(raw) < 2:
+        warnings.append(f"[{sheet_label}] {train_no}: 유효 정차 {len(raw)}개 — 제외")
+        return False
+
+    # 자정 넘김 보정 (단조 증가 강제)
+    rolled, prev = 0, -1
+    for row in raw:
+        for i in (1, 2):
+            if row[i] is None:
+                continue
+            adj = row[i] + rolled * 86400
+            if prev >= 0 and adj < prev:
+                rolled += 1
+                adj = row[i] + rolled * 86400
+            if prev >= 0 and adj < prev:
+                warnings.append(f"[{sheet_label}] {train_no}: {row[0]} 시각 역행")
+            row[i] = adj
+            prev = adj
+
+    trip_id = f"{sheet_label}#{train_no}"
+    for seq, (name, a, d) in enumerate(raw, start=1):
+        if seq == 1:
+            kind = "origin"
+        elif seq == len(raw):
+            kind = "destination"
+        elif a is not None and d is not None:
+            kind = "stop"
+        elif name.startswith("@"):
+            kind = "junction"      # 선로 분기점 통과
+        else:
+            kind = "pass"          # 급행 통과 시각
+        stop_times.append({
+            "trip_id": trip_id, "stop_seq": seq,
+            "stop_id": name if name.startswith("@") else stops[name],
+            "arr_sec": a if a is not None else "",
+            "dep_sec": d if d is not None else "",
+            "stop_type": kind,
+        })
+
+    trips.append({
+        "trip_id": trip_id, "train_no": train_no,
+        "line_id": "1", "line_name": line_name,
+        "formation": "전동차", "direction": direction,
+        "service_id": daytype,
+        "origin": stops.get(raw[0][0], raw[0][0]),
+        "destination": stops.get(raw[-1][0], raw[-1][0]),
+        "next_train_no": clean(ws.cell(link_row, c).value) if link_row else "",
+    })
+    return True
+
+
 def main():
     wb = load_workbook(SRC, data_only=True)
 
@@ -91,6 +174,24 @@ def main():
     warnings = []
 
     for sheet in wb.sheetnames:
+        if sheet == "서울급행":
+            # 다른 시트와 달리 역=행 표가 좌(천안/신창→서울, 2열) · 우(서울→천안, 1열)
+            # 두 블록으로 나란히 앉아 있음(각 블록의 역명 열·구분 열이 다름).
+            ws = wb[sheet]
+            header_row = find_header_row(ws, STATION_COL)
+            boundary_row = find_boundary_row(ws, header_row)
+            for station_col, train_cols, direction in (
+                (2, range(3, 8), "up"),          # 천안/신창 -> 서울
+                (8, range(9, ws.max_column + 1), "down"),  # 서울 -> 천안
+            ):
+                st_rows = collect_stops(ws, station_col, header_row, boundary_row,
+                                         stops, stop_verify)
+                for c in train_cols:
+                    parse_trip_column(ws, c, header_row, st_rows, stops, sheet,
+                                       "1호선/경부장항", direction, "평일",
+                                       None, warnings, trips, stop_times)
+            continue
+
         if sheet in SKIP_SHEETS:
             warnings.append(f"[{sheet}] 시각표 구조 아님 — 제외")
             continue
@@ -104,80 +205,14 @@ def main():
         boundary_row = find_boundary_row(ws, header_row)
 
         # 역 행 위치 수집 (2행 단위, 조정안 블록만)
-        st_rows = []
-        for r, label in collect_station_rows(ws, STATION_COL, header_row, boundary_row,
-                                              NOT_A_STATION, JUNCTIONS):
-            if label.startswith("@"):
-                st_rows.append((r, label))
-                continue
-            name, vf = resolve(label)
-            if name not in stops:
-                stops[name] = f"S1{len(stops) + 1:04d}"
-                stop_verify[name] = (label, vf)
-            st_rows.append((r, name))
+        st_rows = collect_stops(ws, STATION_COL, header_row, boundary_row, stops, stop_verify)
 
         link_row = find_link_row(ws, STATION_COL, header_row, boundary_row)
 
         for c in range(STATION_COL + 1, ws.max_column + 1):
-            train_no = clean(ws.cell(header_row, c).value)
-            if not train_no:
-                continue
-
-            raw = []
-            for r, name in st_rows:
-                a = to_sec(ws.cell(r, c).value)
-                d = to_sec(ws.cell(r + 1, c).value)
-                if a is None and d is None:
-                    continue
-                raw.append([name, a, d])
-            if len(raw) < 2:
-                warnings.append(f"[{sheet}] {train_no}: 유효 정차 {len(raw)}개 — 제외")
-                continue
-
-            # 자정 넘김 보정 (단조 증가 강제)
-            rolled, prev = 0, -1
-            for row in raw:
-                for i in (1, 2):
-                    if row[i] is None:
-                        continue
-                    adj = row[i] + rolled * 86400
-                    if prev >= 0 and adj < prev:
-                        rolled += 1
-                        adj = row[i] + rolled * 86400
-                    if prev >= 0 and adj < prev:
-                        warnings.append(f"[{sheet}] {train_no}: {row[0]} 시각 역행")
-                    row[i] = adj
-                    prev = adj
-
-            trip_id = f"{sheet}#{train_no}"
-            for seq, (name, a, d) in enumerate(raw, start=1):
-                if seq == 1:
-                    kind = "origin"
-                elif seq == len(raw):
-                    kind = "destination"
-                elif a is not None and d is not None:
-                    kind = "stop"
-                elif name.startswith("@"):
-                    kind = "junction"      # 선로 분기점 통과
-                else:
-                    kind = "pass"          # 급행 통과 시각
-                stop_times.append({
-                    "trip_id": trip_id, "stop_seq": seq,
-                    "stop_id": name if name.startswith("@") else stops[name],
-                    "arr_sec": a if a is not None else "",
-                    "dep_sec": d if d is not None else "",
-                    "stop_type": kind,
-                })
-
-            trips.append({
-                "trip_id": trip_id, "train_no": train_no,
-                "line_id": "1", "line_name": f"1호선/{line_group}",
-                "formation": "전동차", "direction": direction,
-                "service_id": daytype,
-                "origin": stops.get(raw[0][0], raw[0][0]),
-                "destination": stops.get(raw[-1][0], raw[-1][0]),
-                "next_train_no": clean(ws.cell(link_row, c).value) if link_row else "",
-            })
+            parse_trip_column(ws, c, header_row, st_rows, stops, sheet,
+                               f"1호선/{line_group}", direction, daytype,
+                               link_row, warnings, trips, stop_times)
 
     os.makedirs(OUT, exist_ok=True)
 
