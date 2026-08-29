@@ -148,7 +148,7 @@ stops(stop_id, display_name, name_ko, line, name_hanja, group_id)
 station_groups(group_id, name_ko)
 junctions(junction_id, name_ko)              -- 선로 분기점(승강장 아님)
 trips(trip_id, train_no, line_name, formation, direction,
-      service_id, origin, destination, next_train_no, source)
+      service_id, origin, destination, source)
 stop_times(trip_id, stop_seq, stop_id, arr_sec, dep_sec, stop_type)
 calendar(service_id, mon, tue, wed, thu, fri, sat, sun)
 meta(key, value)
@@ -160,7 +160,7 @@ GTFS 개념을 차용했다. 향후 GTFS 도구 생태계 활용이나 데이터
 
 - **시각은 자정 기준 경과 초(정수).** `HH:MM` 문자열 대신 정수를 쓰면 심야 열차(25:17 → 91020)를 별도 변환 없이 정렬·비교할 수 있다. 86400 이상은 익일.
 - **`stop_type`은 5종** — `origin` / `stop` / `pass` / `junction` / `destination`. `pass`는 급행 통과역의 통과 시각으로, "이 열차는 우리 역을 통과합니다" 안내에 쓸 수 있다.
-- **`next_train_no`** — 1호선 원본의 연계열번. 종착 후 이어받는 열차번호로 차량 운용을 추적할 수 있다.
+- **`next_train_no` 컬럼은 없다.** 원래 1호선 원본의 연계열번(종착 후 이어받는 열차번호)을 담았으나, 전체 29,812개 trip 중 값이 있는 건 7호선 748건(연계열번 외에 입고/주박/회송 텍스트 라벨 포함)뿐이라 컬럼째 제거했다(2026-08-29).
 - 인덱스: `stop_times(stop_id, dep_sec)`, `stop_times(trip_id, stop_seq)`, `stops(group_id)`.
 
 ### 현재 적재량

@@ -98,7 +98,7 @@ CREATE TABLE station_groups(group_id TEXT PRIMARY KEY, name_ko TEXT);
 CREATE TABLE junctions(junction_id TEXT PRIMARY KEY, name_ko TEXT);
 CREATE TABLE trips(trip_id TEXT PRIMARY KEY, train_no TEXT, line_name TEXT,
                    formation TEXT, direction TEXT, service_id TEXT,
-                   origin TEXT, destination TEXT, next_train_no TEXT, source TEXT);
+                   origin TEXT, destination TEXT, source TEXT);
 CREATE TABLE stop_times(trip_id TEXT, stop_seq INT, stop_id TEXT,
                         arr_sec INT, dep_sec INT, stop_type TEXT,
                         PRIMARY KEY(trip_id, stop_seq));
@@ -156,10 +156,10 @@ def main():
     km = {r["stop_id"]: add(r["name_ko"], LINE_OF["KTX"], r["name_hanja"])
           for r in rd(f"{OUT_KTX}/stops.csv")}
     for t in rd(f"{OUT_KTX}/trips.csv"):
-        cur.execute("INSERT INTO trips VALUES(?,?,?,?,?,?,?,?,?,?)",
+        cur.execute("INSERT INTO trips VALUES(?,?,?,?,?,?,?,?,?)",
                     ("KTX#" + t["trip_id"], t["train_no"], t["line_name"], t["formation"],
                      t["direction"], t["service_id"], km[t["origin"]], km[t["destination"]],
-                     "", "KTX"))
+                     "KTX"))
     rows = sorted(rd(f"{OUT_KTX}/stop_times.csv"),
                   key=lambda r: (r["trip_id"], int(r["stop_seq"])))
     for tid, grp in itertools.groupby(rows, key=lambda r: r["trip_id"]):
@@ -183,10 +183,10 @@ def main():
                              merge_key=r.get("merge_key") or None)
            for r in rd(f"{OUT_ILBAN}/stops.csv")}
     for t in rd(f"{OUT_ILBAN}/trips.csv"):
-        cur.execute("INSERT INTO trips VALUES(?,?,?,?,?,?,?,?,?,?)",
+        cur.execute("INSERT INTO trips VALUES(?,?,?,?,?,?,?,?,?)",
                     ("IB#" + t["trip_id"], t["train_no"], t["line_name"], t["formation"],
                      t["direction"], t["service_id"], ibm[t["origin"]], ibm[t["destination"]],
-                     "", "ILBAN"))
+                     "ILBAN"))
     rows = sorted(rd(f"{OUT_ILBAN}/stop_times.csv"),
                   key=lambda r: (r["trip_id"], int(r["stop_seq"])))
     for tid, grp in itertools.groupby(rows, key=lambda r: r["trip_id"]):
@@ -207,10 +207,10 @@ def main():
     gwm = {r["stop_id"]: add(r["name_ko"], LINE_OF["KTX"])
            for r in rd(f"{OUT_GWANGWANG}/stops.csv")}
     for t in rd(f"{OUT_GWANGWANG}/trips.csv"):
-        cur.execute("INSERT INTO trips VALUES(?,?,?,?,?,?,?,?,?,?)",
+        cur.execute("INSERT INTO trips VALUES(?,?,?,?,?,?,?,?,?)",
                     ("GW#" + t["trip_id"], t["train_no"], t["line_name"], t["formation"],
                      t["direction"], t["service_id"], gwm.get(t["origin"], t["origin"]),
-                     gwm.get(t["destination"], t["destination"]), t["next_train_no"], "GWANGWANG"))
+                     gwm.get(t["destination"], t["destination"]), "GWANGWANG"))
     for st in rd(f"{OUT_GWANGWANG}/stop_times.csv"):
         cur.execute("INSERT INTO stop_times VALUES(?,?,?,?,?,?)",
                     ("GW#" + st["trip_id"], int(st["stop_seq"]),
@@ -232,10 +232,10 @@ def main():
         lm = {r["stop_id"]: add(r["name_ko"], LINE_OF["LINE1"])
               for r in rd(f"{d}/stops.csv")}
         for t in rd(f"{d}/trips.csv"):
-            cur.execute("INSERT INTO trips VALUES(?,?,?,?,?,?,?,?,?,?)",
+            cur.execute("INSERT INTO trips VALUES(?,?,?,?,?,?,?,?,?)",
                         ("L1#" + t["trip_id"], t["train_no"], t["line_name"], t["formation"],
                          t["direction"], t["service_id"], lm.get(t["origin"], t["origin"]),
-                         lm.get(t["destination"], t["destination"]), t["next_train_no"], "LINE1"))
+                         lm.get(t["destination"], t["destination"]), "LINE1"))
         for st in rd(f"{d}/stop_times.csv"):
             cur.execute("INSERT INTO stop_times VALUES(?,?,?,?,?,?)",
                         ("L1#" + st["trip_id"], int(st["stop_seq"]),
@@ -253,10 +253,10 @@ def main():
     gxm = {r["stop_id"]: add(r["name_ko"], LINE_OF["LINE1"])
            for r in rd(f"{OUT_GYEONGIN_EXPRESS}/stops.csv")}
     for t in rd(f"{OUT_GYEONGIN_EXPRESS}/trips.csv"):
-        cur.execute("INSERT INTO trips VALUES(?,?,?,?,?,?,?,?,?,?)",
+        cur.execute("INSERT INTO trips VALUES(?,?,?,?,?,?,?,?,?)",
                     ("L1X#" + t["trip_id"], t["train_no"], t["line_name"], t["formation"],
                      t["direction"], t["service_id"], gxm.get(t["origin"], t["origin"]),
-                     gxm.get(t["destination"], t["destination"]), t["next_train_no"], "LINE1_GYEONGIN_EXPRESS"))
+                     gxm.get(t["destination"], t["destination"]), "LINE1_GYEONGIN_EXPRESS"))
     for st in rd(f"{OUT_GYEONGIN_EXPRESS}/stop_times.csv"):
         cur.execute("INSERT INTO stop_times VALUES(?,?,?,?,?,?)",
                     ("L1X#" + st["trip_id"], int(st["stop_seq"]),
@@ -272,10 +272,10 @@ def main():
     sm = {r["stop_id"]: add(r["name_ko"], LINE_OF["SUIN_BUNDANG"])
           for r in rd(f"{OUT_SUIN_BUNDANG}/stops.csv")}
     for t in rd(f"{OUT_SUIN_BUNDANG}/trips.csv"):
-        cur.execute("INSERT INTO trips VALUES(?,?,?,?,?,?,?,?,?,?)",
+        cur.execute("INSERT INTO trips VALUES(?,?,?,?,?,?,?,?,?)",
                     ("SB#" + t["trip_id"], t["train_no"], t["line_name"], t["formation"],
                      t["direction"], t["service_id"], sm.get(t["origin"], t["origin"]),
-                     sm.get(t["destination"], t["destination"]), t["next_train_no"], "SUIN_BUNDANG"))
+                     sm.get(t["destination"], t["destination"]), "SUIN_BUNDANG"))
     for st in rd(f"{OUT_SUIN_BUNDANG}/stop_times.csv"):
         cur.execute("INSERT INTO stop_times VALUES(?,?,?,?,?,?)",
                     ("SB#" + st["trip_id"], int(st["stop_seq"]),
@@ -292,10 +292,10 @@ def main():
     agm = {r["stop_id"]: add(r["name_ko"], LINE_OF["ANSAN_GWACHEON"])
            for r in rd(f"{OUT_ANSAN_GWACHEON}/stops.csv")}
     for t in rd(f"{OUT_ANSAN_GWACHEON}/trips.csv"):
-        cur.execute("INSERT INTO trips VALUES(?,?,?,?,?,?,?,?,?,?)",
+        cur.execute("INSERT INTO trips VALUES(?,?,?,?,?,?,?,?,?)",
                     ("AG#" + t["trip_id"], t["train_no"], t["line_name"], t["formation"],
                      t["direction"], t["service_id"], agm.get(t["origin"], t["origin"]),
-                     agm.get(t["destination"], t["destination"]), t["next_train_no"], "ANSAN_GWACHEON"))
+                     agm.get(t["destination"], t["destination"]), "ANSAN_GWACHEON"))
     for st in rd(f"{OUT_ANSAN_GWACHEON}/stop_times.csv"):
         cur.execute("INSERT INTO stop_times VALUES(?,?,?,?,?,?)",
                     ("AG#" + st["trip_id"], int(st["stop_seq"]),
@@ -311,10 +311,10 @@ def main():
     gjm = {r["stop_id"]: add(r["name_ko"], LINE_OF["GYEONGUI_JUNGANG"])
            for r in rd(f"{OUT_GYEONGUI_JUNGANG}/stops.csv")}
     for t in rd(f"{OUT_GYEONGUI_JUNGANG}/trips.csv"):
-        cur.execute("INSERT INTO trips VALUES(?,?,?,?,?,?,?,?,?,?)",
+        cur.execute("INSERT INTO trips VALUES(?,?,?,?,?,?,?,?,?)",
                     ("GJ#" + t["trip_id"], t["train_no"], t["line_name"], t["formation"],
                      t["direction"], t["service_id"], gjm.get(t["origin"], t["origin"]),
-                     gjm.get(t["destination"], t["destination"]), t["next_train_no"], "GYEONGUI_JUNGANG"))
+                     gjm.get(t["destination"], t["destination"]), "GYEONGUI_JUNGANG"))
     for st in rd(f"{OUT_GYEONGUI_JUNGANG}/stop_times.csv"):
         cur.execute("INSERT INTO stop_times VALUES(?,?,?,?,?,?)",
                     ("GJ#" + st["trip_id"], int(st["stop_seq"]),
@@ -330,10 +330,10 @@ def main():
     gem = {r["stop_id"]: add(r["name_ko"], LINE_OF["GYEONGUI"])
            for r in rd(f"{OUT_GYEONGUI}/stops.csv")}
     for t in rd(f"{OUT_GYEONGUI}/trips.csv"):
-        cur.execute("INSERT INTO trips VALUES(?,?,?,?,?,?,?,?,?,?)",
+        cur.execute("INSERT INTO trips VALUES(?,?,?,?,?,?,?,?,?)",
                     ("GE#" + t["trip_id"], t["train_no"], t["line_name"], t["formation"],
                      t["direction"], t["service_id"], gem.get(t["origin"], t["origin"]),
-                     gem.get(t["destination"], t["destination"]), t["next_train_no"], "GYEONGUI"))
+                     gem.get(t["destination"], t["destination"]), "GYEONGUI"))
     for st in rd(f"{OUT_GYEONGUI}/stop_times.csv"):
         cur.execute("INSERT INTO stop_times VALUES(?,?,?,?,?,?)",
                     ("GE#" + st["trip_id"], int(st["stop_seq"]),
@@ -349,10 +349,10 @@ def main():
     gcm = {r["stop_id"]: add(r["name_ko"], LINE_OF["GYEONGCHUN"])
            for r in rd(f"{OUT_GYEONGCHUN}/stops.csv")}
     for t in rd(f"{OUT_GYEONGCHUN}/trips.csv"):
-        cur.execute("INSERT INTO trips VALUES(?,?,?,?,?,?,?,?,?,?)",
+        cur.execute("INSERT INTO trips VALUES(?,?,?,?,?,?,?,?,?)",
                     ("GC#" + t["trip_id"], t["train_no"], t["line_name"], t["formation"],
                      t["direction"], t["service_id"], gcm.get(t["origin"], t["origin"]),
-                     gcm.get(t["destination"], t["destination"]), t["next_train_no"], "GYEONGCHUN"))
+                     gcm.get(t["destination"], t["destination"]), "GYEONGCHUN"))
     for st in rd(f"{OUT_GYEONGCHUN}/stop_times.csv"):
         cur.execute("INSERT INTO stop_times VALUES(?,?,?,?,?,?)",
                     ("GC#" + st["trip_id"], int(st["stop_seq"]),
@@ -368,10 +368,10 @@ def main():
     ggm = {r["stop_id"]: add(r["name_ko"], LINE_OF["GYEONGGANG"])
            for r in rd(f"{OUT_GYEONGGANG}/stops.csv")}
     for t in rd(f"{OUT_GYEONGGANG}/trips.csv"):
-        cur.execute("INSERT INTO trips VALUES(?,?,?,?,?,?,?,?,?,?)",
+        cur.execute("INSERT INTO trips VALUES(?,?,?,?,?,?,?,?,?)",
                     ("GG#" + t["trip_id"], t["train_no"], t["line_name"], t["formation"],
                      t["direction"], t["service_id"], ggm.get(t["origin"], t["origin"]),
-                     ggm.get(t["destination"], t["destination"]), t["next_train_no"], "GYEONGGANG"))
+                     ggm.get(t["destination"], t["destination"]), "GYEONGGANG"))
     for st in rd(f"{OUT_GYEONGGANG}/stop_times.csv"):
         cur.execute("INSERT INTO stop_times VALUES(?,?,?,?,?,?)",
                     ("GG#" + st["trip_id"], int(st["stop_seq"]),
@@ -389,10 +389,10 @@ def main():
                              merge_key=r.get("merge_key") or None)
            for r in rd(f"{OUT_DONGHAE}/stops.csv")}
     for t in rd(f"{OUT_DONGHAE}/trips.csv"):
-        cur.execute("INSERT INTO trips VALUES(?,?,?,?,?,?,?,?,?,?)",
+        cur.execute("INSERT INTO trips VALUES(?,?,?,?,?,?,?,?,?)",
                     ("DH#" + t["trip_id"], t["train_no"], t["line_name"], t["formation"],
                      t["direction"], t["service_id"], dhm.get(t["origin"], t["origin"]),
-                     dhm.get(t["destination"], t["destination"]), t["next_train_no"], "DONGHAE"))
+                     dhm.get(t["destination"], t["destination"]), "DONGHAE"))
     for st in rd(f"{OUT_DONGHAE}/stop_times.csv"):
         cur.execute("INSERT INTO stop_times VALUES(?,?,?,?,?,?)",
                     ("DH#" + st["trip_id"], int(st["stop_seq"]),
@@ -408,10 +408,10 @@ def main():
     dgm = {r["stop_id"]: add(r["name_ko"], LINE_OF["DAEGYEONG"])
            for r in rd(f"{OUT_DAEGYEONG}/stops.csv")}
     for t in rd(f"{OUT_DAEGYEONG}/trips.csv"):
-        cur.execute("INSERT INTO trips VALUES(?,?,?,?,?,?,?,?,?,?)",
+        cur.execute("INSERT INTO trips VALUES(?,?,?,?,?,?,?,?,?)",
                     ("DG#" + t["trip_id"], t["train_no"], t["line_name"], t["formation"],
                      t["direction"], t["service_id"], dgm.get(t["origin"], t["origin"]),
-                     dgm.get(t["destination"], t["destination"]), t["next_train_no"], "DAEGYEONG"))
+                     dgm.get(t["destination"], t["destination"]), "DAEGYEONG"))
     for st in rd(f"{OUT_DAEGYEONG}/stop_times.csv"):
         cur.execute("INSERT INTO stop_times VALUES(?,?,?,?,?,?)",
                     ("DG#" + st["trip_id"], int(st["stop_seq"]),
@@ -430,10 +430,10 @@ def main():
         som = {r["stop_id"]: add(r["name_ko"], LINE_OF[line_key])
                for r in rd(f"{out_dir}/stops.csv")}
         for t in rd(f"{out_dir}/trips.csv"):
-            cur.execute("INSERT INTO trips VALUES(?,?,?,?,?,?,?,?,?,?)",
+            cur.execute("INSERT INTO trips VALUES(?,?,?,?,?,?,?,?,?)",
                         (f"{pfx}#" + t["trip_id"], t["train_no"], t["line_name"], t["formation"],
                          t["direction"], SUN_ONLY_LABEL(t["service_id"]), som[t["origin"]],
-                         som[t["destination"]], t["next_train_no"], line_key))
+                         som[t["destination"]], line_key))
         for st in rd(f"{out_dir}/stop_times.csv"):
             cur.execute("INSERT INTO stop_times VALUES(?,?,?,?,?,?)",
                         (f"{pfx}#" + st["trip_id"], int(st["stop_seq"]),
@@ -451,10 +451,10 @@ def main():
     s2bm = {r["stop_id"]: add(r["name_ko"], LINE_OF["SEOUL2"])
             for r in rd(f"{OUT_SEOUL2_BRANCH}/stops.csv")}
     for t in rd(f"{OUT_SEOUL2_BRANCH}/trips.csv"):
-        cur.execute("INSERT INTO trips VALUES(?,?,?,?,?,?,?,?,?,?)",
+        cur.execute("INSERT INTO trips VALUES(?,?,?,?,?,?,?,?,?)",
                     ("S2BR#" + t["trip_id"], t["train_no"], t["line_name"], t["formation"],
                      t["direction"], SUN_ONLY_LABEL(t["service_id"]), s2bm[t["origin"]],
-                     s2bm[t["destination"]], t["next_train_no"], "SEOUL2_BRANCH"))
+                     s2bm[t["destination"]], "SEOUL2_BRANCH"))
     for st in rd(f"{OUT_SEOUL2_BRANCH}/stop_times.csv"):
         cur.execute("INSERT INTO stop_times VALUES(?,?,?,?,?,?)",
                     ("S2BR#" + st["trip_id"], int(st["stop_seq"]),
@@ -470,10 +470,10 @@ def main():
     icm = {r["stop_id"]: add(r["name_ko"], LINE_OF["ITX_CHUNCHEON"])
            for r in rd(f"{OUT_ITX_CHUNCHEON}/stops.csv")}
     for t in rd(f"{OUT_ITX_CHUNCHEON}/trips.csv"):
-        cur.execute("INSERT INTO trips VALUES(?,?,?,?,?,?,?,?,?,?)",
+        cur.execute("INSERT INTO trips VALUES(?,?,?,?,?,?,?,?,?)",
                     ("IC#" + t["trip_id"], t["train_no"], t["line_name"], t["formation"],
                      t["direction"], t["service_id"], icm.get(t["origin"], t["origin"]),
-                     icm.get(t["destination"], t["destination"]), t["next_train_no"], "ITX_CHUNCHEON"))
+                     icm.get(t["destination"], t["destination"]), "ITX_CHUNCHEON"))
     for st in rd(f"{OUT_ITX_CHUNCHEON}/stop_times.csv"):
         cur.execute("INSERT INTO stop_times VALUES(?,?,?,?,?,?)",
                     ("IC#" + st["trip_id"], int(st["stop_seq"]),
@@ -490,10 +490,10 @@ def main():
     shm = {r["stop_id"]: add(r["name_ko"], LINE_OF["SEOHAE"])
            for r in rd(f"{OUT_SEOHAE}/stops.csv")}
     for t in rd(f"{OUT_SEOHAE}/trips.csv"):
-        cur.execute("INSERT INTO trips VALUES(?,?,?,?,?,?,?,?,?,?)",
+        cur.execute("INSERT INTO trips VALUES(?,?,?,?,?,?,?,?,?)",
                     ("SH#" + t["trip_id"], t["train_no"], t["line_name"], t["formation"],
                      t["direction"], t["service_id"], shm.get(t["origin"], t["origin"]),
-                     shm.get(t["destination"], t["destination"]), t["next_train_no"], "SEOHAE"))
+                     shm.get(t["destination"], t["destination"]), "SEOHAE"))
     for st in rd(f"{OUT_SEOHAE}/stop_times.csv"):
         cur.execute("INSERT INTO stop_times VALUES(?,?,?,?,?,?)",
                     ("SH#" + st["trip_id"], int(st["stop_seq"]),
@@ -518,10 +518,10 @@ def main():
                                  merge_key=r.get("merge_key") or None)
                for r in rd(f"{out_dir}/stops.csv")}
         for t in rd(f"{out_dir}/trips.csv"):
-            cur.execute("INSERT INTO trips VALUES(?,?,?,?,?,?,?,?,?,?)",
+            cur.execute("INSERT INTO trips VALUES(?,?,?,?,?,?,?,?,?)",
                         (f"DG{i}#" + t["trip_id"], t["train_no"], t["line_name"], t["formation"],
                          t["direction"], SUN_ONLY_LABEL(t["service_id"]), dgm.get(t["origin"], t["origin"]),
-                         dgm.get(t["destination"], t["destination"]), t["next_train_no"], line_key))
+                         dgm.get(t["destination"], t["destination"]), line_key))
         for st in rd(f"{out_dir}/stop_times.csv"):
             cur.execute("INSERT INTO stop_times VALUES(?,?,?,?,?,?)",
                         (f"DG{i}#" + st["trip_id"], int(st["stop_seq"]),
@@ -539,10 +539,10 @@ def main():
                              merge_key=r.get("merge_key") or None)
            for r in rd(f"{OUT_DAEJEON1}/stops.csv")}
     for t in rd(f"{OUT_DAEJEON1}/trips.csv"):
-        cur.execute("INSERT INTO trips VALUES(?,?,?,?,?,?,?,?,?,?)",
+        cur.execute("INSERT INTO trips VALUES(?,?,?,?,?,?,?,?,?)",
                     ("DJ1#" + t["trip_id"], t["train_no"], t["line_name"], t["formation"],
                      t["direction"], t["service_id"], djm[t["origin"]], djm[t["destination"]],
-                     "", "DAEJEON1"))
+                     "DAEJEON1"))
     rows = sorted(rd(f"{OUT_DAEJEON1}/stop_times.csv"),
                   key=lambda r: (r["trip_id"], int(r["stop_seq"])))
     for tid, grp in itertools.groupby(rows, key=lambda r: r["trip_id"]):
@@ -568,10 +568,10 @@ def main():
                                  merge_key=r.get("merge_key") or None)
                for r in rd(f"{out_dir}/stops.csv")}
         for t in rd(f"{out_dir}/trips.csv"):
-            cur.execute("INSERT INTO trips VALUES(?,?,?,?,?,?,?,?,?,?)",
+            cur.execute("INSERT INTO trips VALUES(?,?,?,?,?,?,?,?,?)",
                         (f"BS{i}#" + t["trip_id"], t["train_no"], t["line_name"], t["formation"],
                          t["direction"], SUN_ONLY_LABEL(t["service_id"]), bsm.get(t["origin"], t["origin"]),
-                         bsm.get(t["destination"], t["destination"]), t["next_train_no"], line_key))
+                         bsm.get(t["destination"], t["destination"]), line_key))
         for st in rd(f"{out_dir}/stop_times.csv"):
             cur.execute("INSERT INTO stop_times VALUES(?,?,?,?,?,?)",
                         (f"BS{i}#" + st["trip_id"], int(st["stop_seq"]),
@@ -590,10 +590,10 @@ def main():
                              merge_key=r.get("merge_key") or None)
            for r in rd(f"{OUT_BUSAN_GIMHAE}/stops.csv")}
     for t in rd(f"{OUT_BUSAN_GIMHAE}/trips.csv"):
-        cur.execute("INSERT INTO trips VALUES(?,?,?,?,?,?,?,?,?,?)",
+        cur.execute("INSERT INTO trips VALUES(?,?,?,?,?,?,?,?,?)",
                     ("BG#" + t["trip_id"], t["train_no"], t["line_name"], t["formation"],
                      t["direction"], t["service_id"], bgm.get(t["origin"], t["origin"]),
-                     bgm.get(t["destination"], t["destination"]), t["next_train_no"], "BUSAN_GIMHAE"))
+                     bgm.get(t["destination"], t["destination"]), "BUSAN_GIMHAE"))
     for st in rd(f"{OUT_BUSAN_GIMHAE}/stop_times.csv"):
         cur.execute("INSERT INTO stop_times VALUES(?,?,?,?,?,?)",
                     ("BG#" + st["trip_id"], int(st["stop_seq"]),
@@ -616,10 +616,10 @@ def main():
                                      merge_key=r.get("merge_key") or None)
                   for r in rd(f"{out_dir}/stops.csv")}
             for t in rd(f"{out_dir}/trips.csv"):
-                cur.execute("INSERT INTO trips VALUES(?,?,?,?,?,?,?,?,?,?)",
+                cur.execute("INSERT INTO trips VALUES(?,?,?,?,?,?,?,?,?)",
                             (f"{pfx}#" + t["trip_id"], t["train_no"], t["line_name"], t["formation"],
                              t["direction"], t["service_id"], sm.get(t["origin"], t["origin"]),
-                             sm.get(t["destination"], t["destination"]), t["next_train_no"], line_key))
+                             sm.get(t["destination"], t["destination"]), line_key))
             for st in rd(f"{out_dir}/stop_times.csv"):
                 cur.execute("INSERT INTO stop_times VALUES(?,?,?,?,?,?)",
                             (f"{pfx}#" + st["trip_id"], int(st["stop_seq"]),
@@ -637,10 +637,10 @@ def main():
     icm = {r["stop_id"]: add(r["name_ko"], LINE_OF["INCHEON1"])
            for r in rd(f"{OUT_INCHEON1}/stops.csv")}
     for t in rd(f"{OUT_INCHEON1}/trips.csv"):
-        cur.execute("INSERT INTO trips VALUES(?,?,?,?,?,?,?,?,?,?)",
+        cur.execute("INSERT INTO trips VALUES(?,?,?,?,?,?,?,?,?)",
                     ("IC1#" + t["trip_id"], t["train_no"], t["line_name"], t["formation"],
                      t["direction"], t["service_id"], icm[t["origin"]], icm[t["destination"]],
-                     "", "INCHEON1"))
+                     "INCHEON1"))
     rows = sorted(rd(f"{OUT_INCHEON1}/stop_times.csv"),
                   key=lambda r: (r["trip_id"], int(r["stop_seq"])))
     for tid, grp in itertools.groupby(rows, key=lambda r: r["trip_id"]):
@@ -664,10 +664,10 @@ def main():
     arm = {r["stop_id"]: add(r["name_ko"], LINE_OF["AREX"])
            for r in rd(f"{OUT_AIRPORT_RAILROAD}/stops.csv")}
     for t in rd(f"{OUT_AIRPORT_RAILROAD}/trips.csv"):
-        cur.execute("INSERT INTO trips VALUES(?,?,?,?,?,?,?,?,?,?)",
+        cur.execute("INSERT INTO trips VALUES(?,?,?,?,?,?,?,?,?)",
                     ("AR#" + t["trip_id"], t["train_no"], t["line_name"], t["formation"],
                      t["direction"], t["service_id"], arm.get(t["origin"], t["origin"]),
-                     arm.get(t["destination"], t["destination"]), t["next_train_no"], "AREX"))
+                     arm.get(t["destination"], t["destination"]), "AREX"))
     for st in rd(f"{OUT_AIRPORT_RAILROAD}/stop_times.csv"):
         cur.execute("INSERT INTO stop_times VALUES(?,?,?,?,?,?)",
                     ("AR#" + st["trip_id"], int(st["stop_seq"]),
@@ -686,10 +686,10 @@ def main():
                              merge_key=r.get("merge_key") or None)
            for r in rd(f"{OUT_GIMPO_GOLDLINE}/stops.csv")}
     for t in rd(f"{OUT_GIMPO_GOLDLINE}/trips.csv"):
-        cur.execute("INSERT INTO trips VALUES(?,?,?,?,?,?,?,?,?,?)",
+        cur.execute("INSERT INTO trips VALUES(?,?,?,?,?,?,?,?,?)",
                     ("GGL#" + t["trip_id"], t["train_no"], t["line_name"], t["formation"],
                      t["direction"], t["service_id"], ggm[t["origin"]], ggm[t["destination"]],
-                     "", "GIMPO_GOLDLINE"))
+                     "GIMPO_GOLDLINE"))
     rows = sorted(rd(f"{OUT_GIMPO_GOLDLINE}/stop_times.csv"),
                   key=lambda r: (r["trip_id"], int(r["stop_seq"])))
     for tid, grp in itertools.groupby(rows, key=lambda r: r["trip_id"]):
@@ -713,10 +713,10 @@ def main():
                              merge_key=r.get("merge_key") or None)
            for r in rd(f"{OUT_SILLIM}/stops.csv")}
     for t in rd(f"{OUT_SILLIM}/trips.csv"):
-        cur.execute("INSERT INTO trips VALUES(?,?,?,?,?,?,?,?,?,?)",
+        cur.execute("INSERT INTO trips VALUES(?,?,?,?,?,?,?,?,?)",
                     ("SL#" + t["trip_id"], t["train_no"], t["line_name"], t["formation"],
                      t["direction"], t["service_id"], slm[t["origin"]], slm[t["destination"]],
-                     "", "SILLIM"))
+                     "SILLIM"))
     rows = sorted(rd(f"{OUT_SILLIM}/stop_times.csv"),
                   key=lambda r: (r["trip_id"], int(r["stop_seq"])))
     for tid, grp in itertools.groupby(rows, key=lambda r: r["trip_id"]):
@@ -740,10 +740,10 @@ def main():
                              merge_key=r.get("merge_key") or None)
            for r in rd(f"{OUT_UI_SINSEOL}/stops.csv")}
     for t in rd(f"{OUT_UI_SINSEOL}/trips.csv"):
-        cur.execute("INSERT INTO trips VALUES(?,?,?,?,?,?,?,?,?,?)",
+        cur.execute("INSERT INTO trips VALUES(?,?,?,?,?,?,?,?,?)",
                     ("UI#" + t["trip_id"], t["train_no"], t["line_name"], t["formation"],
                      t["direction"], t["service_id"], uim[t["origin"]], uim[t["destination"]],
-                     "", "UI_SINSEOL"))
+                     "UI_SINSEOL"))
     rows = sorted(rd(f"{OUT_UI_SINSEOL}/stop_times.csv"),
                   key=lambda r: (r["trip_id"], int(r["stop_seq"])))
     for tid, grp in itertools.groupby(rows, key=lambda r: r["trip_id"]):
@@ -772,10 +772,10 @@ def main():
                                   merge_key=r.get("merge_key") or None)
                for r in rd(f"{out_dir}/stops.csv")}
         for t in rd(f"{out_dir}/trips.csv"):
-            cur.execute("INSERT INTO trips VALUES(?,?,?,?,?,?,?,?,?,?)",
+            cur.execute("INSERT INTO trips VALUES(?,?,?,?,?,?,?,?,?)",
                         (f"{tag}#" + t["trip_id"], t["train_no"], t["line_name"], t["formation"],
                          t["direction"], t["service_id"], gam[t["origin"]], gam[t["destination"]],
-                         "", tag))
+                         tag))
         rows = sorted(rd(f"{out_dir}/stop_times.csv"),
                       key=lambda r: (r["trip_id"], int(r["stop_seq"])))
         for tid, grp in itertools.groupby(rows, key=lambda r: r["trip_id"]):
@@ -802,10 +802,10 @@ def main():
                              merge_key=r.get("merge_key") or None)
            for r in rd(f"{OUT_GWANGJU1}/stops.csv")}
     for t in rd(f"{OUT_GWANGJU1}/trips.csv"):
-        cur.execute("INSERT INTO trips VALUES(?,?,?,?,?,?,?,?,?,?)",
+        cur.execute("INSERT INTO trips VALUES(?,?,?,?,?,?,?,?,?)",
                     ("GJ1#" + t["trip_id"], t["train_no"], t["line_name"], t["formation"],
                      t["direction"], SUN_ONLY_LABEL(t["service_id"]), gjm[t["origin"]], gjm[t["destination"]],
-                     "", "GWANGJU1"))
+                     "GWANGJU1"))
     rows = sorted(rd(f"{OUT_GWANGJU1}/stop_times.csv"),
                   key=lambda r: (r["trip_id"], int(r["stop_seq"])))
     for tid, grp in itertools.groupby(rows, key=lambda r: r["trip_id"]):
@@ -830,10 +830,10 @@ def main():
                               merge_key=r.get("merge_key") or None)
             for r in rd(f"{OUT_INCHEON2}/stops.csv")}
     for t in rd(f"{OUT_INCHEON2}/trips.csv"):
-        cur.execute("INSERT INTO trips VALUES(?,?,?,?,?,?,?,?,?,?)",
+        cur.execute("INSERT INTO trips VALUES(?,?,?,?,?,?,?,?,?)",
                     ("IC2#" + t["trip_id"], t["train_no"], t["line_name"], t["formation"],
                      t["direction"], t["service_id"], ic2m[t["origin"]], ic2m[t["destination"]],
-                     "", "INCHEON2"))
+                     "INCHEON2"))
     rows = sorted(rd(f"{OUT_INCHEON2}/stop_times.csv"),
                   key=lambda r: (r["trip_id"], int(r["stop_seq"])))
     for tid, grp in itertools.groupby(rows, key=lambda r: r["trip_id"]):
@@ -857,10 +857,10 @@ def main():
                              merge_key=r.get("merge_key") or None)
            for r in rd(f"{OUT_YONGIN}/stops.csv")}
     for t in rd(f"{OUT_YONGIN}/trips.csv"):
-        cur.execute("INSERT INTO trips VALUES(?,?,?,?,?,?,?,?,?,?)",
+        cur.execute("INSERT INTO trips VALUES(?,?,?,?,?,?,?,?,?)",
                     ("YI#" + t["trip_id"], t["train_no"], t["line_name"], t["formation"],
                      t["direction"], t["service_id"], yim[t["origin"]], yim[t["destination"]],
-                     "", "YONGIN"))
+                     "YONGIN"))
     rows = sorted(rd(f"{OUT_YONGIN}/stop_times.csv"),
                   key=lambda r: (r["trip_id"], int(r["stop_seq"])))
     for tid, grp in itertools.groupby(rows, key=lambda r: r["trip_id"]):
@@ -885,10 +885,10 @@ def main():
                              merge_key=r.get("merge_key") or None)
            for r in rd(f"{OUT_UIJEONGBU}/stops.csv")}
     for t in rd(f"{OUT_UIJEONGBU}/trips.csv"):
-        cur.execute("INSERT INTO trips VALUES(?,?,?,?,?,?,?,?,?,?)",
+        cur.execute("INSERT INTO trips VALUES(?,?,?,?,?,?,?,?,?)",
                     ("UJ#" + t["trip_id"], t["train_no"], t["line_name"], t["formation"],
                      t["direction"], t["service_id"], ujm[t["origin"]], ujm[t["destination"]],
-                     "", "UIJEONGBU"))
+                     "UIJEONGBU"))
     rows = sorted(rd(f"{OUT_UIJEONGBU}/stop_times.csv"),
                   key=lambda r: (r["trip_id"], int(r["stop_seq"])))
     for tid, grp in itertools.groupby(rows, key=lambda r: r["trip_id"]):
@@ -913,10 +913,10 @@ def main():
                                merge_key=r.get("merge_key") or None)
              for r in rd(f"{OUT_SINBUNDANG}/stops.csv")}
     for t in rd(f"{OUT_SINBUNDANG}/trips.csv"):
-        cur.execute("INSERT INTO trips VALUES(?,?,?,?,?,?,?,?,?,?)",
+        cur.execute("INSERT INTO trips VALUES(?,?,?,?,?,?,?,?,?)",
                     ("SBD#" + t["trip_id"], t["train_no"], t["line_name"], t["formation"],
                      t["direction"], t["service_id"], sinbm[t["origin"]], sinbm[t["destination"]],
-                     "", "SINBUNDANG"))
+                     "SINBUNDANG"))
     rows = sorted(rd(f"{OUT_SINBUNDANG}/stop_times.csv"),
                   key=lambda r: (r["trip_id"], int(r["stop_seq"])))
     for tid, grp in itertools.groupby(rows, key=lambda r: r["trip_id"]):
