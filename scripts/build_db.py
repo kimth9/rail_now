@@ -224,6 +224,10 @@ def main():
 
     # --- 1호선 (평일 / 휴일) ---
     cur.execute("INSERT INTO junctions VALUES(?,?)", ("@시흥연결선", "시흥연결선"))
+    # 마전(경원선 양주~덕계)은 여객취급 안 하는 신호장 — 인천2호선 마전역과 동명이라
+    # 예전엔 station_groups에서 잘못 병합돼 있었음(2026-08-29 발견, parse_line1.py의
+    # JUNCTIONS로 분리)
+    cur.execute("INSERT INTO junctions VALUES(?,?)", ("@마전신호장", "마전신호장"))
     for d in OUT_L1_DIRS:
         lm = {r["stop_id"]: add(r["name_ko"], LINE_OF["LINE1"])
               for r in rd(f"{d}/stops.csv")}
