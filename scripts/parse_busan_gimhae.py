@@ -30,8 +30,16 @@ def clean(v):
     return str(v).strip() if v is not None else ""
 
 
+# 원본 "김해공항역"은 관용 표기 — 정식 역명은 "공항" 단독(2026-08-28 나무위키 대조로
+# 확인). 광주1호선에도 동명의(무관한) "공항"역이 있어 이름만으로 자동 병합되면
+# 오작동 — merge_key로 분리한다.
+RENAME = {"김해공항": "공항"}
+MERGE_KEY = {"공항": "김해공항"}
+
+
 def resolve(label):
-    return label[:-1] if label.endswith("역") else label
+    name = label[:-1] if label.endswith("역") else label
+    return RENAME.get(name, name)
 
 
 def to_sec(v):
@@ -133,9 +141,9 @@ def main():
 
     with open(f"{OUT}/stops.csv", "w", newline="", encoding="utf-8-sig") as f:
         w = csv.writer(f)
-        w.writerow(["stop_id", "name_ko", "raw_label", "verify"])
+        w.writerow(["stop_id", "name_ko", "raw_label", "verify", "merge_key"])
         for name, sid in stops.items():
-            w.writerow([sid, name, stop_verify[name][0], stop_verify[name][1]])
+            w.writerow([sid, name, stop_verify[name][0], stop_verify[name][1], MERGE_KEY.get(name, "")])
 
     with open(f"{OUT}/trips.csv", "w", newline="", encoding="utf-8-sig") as f:
         w = csv.DictWriter(f, fieldnames=list(trips[0].keys()))

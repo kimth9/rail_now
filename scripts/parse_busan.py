@@ -48,6 +48,14 @@ MERGE_KEY = {
 }
 
 
+# 원본 표기가 정식 역명과 다른 것(2026-08-28 나무위키 대조로 확인) — 정식 역명은
+# 가운뎃점(·) 표기인데 원본은 마침표(.)를 씀
+RENAME = {
+    "경성대.부경대": "경성대·부경대",
+    "국제금융센터.부산은행": "국제금융센터·부산은행",
+}
+
+
 def clean(v):
     return str(v).strip() if v is not None else ""
 
@@ -88,7 +96,7 @@ def main():
             end_idx = markers[bi + 1] if bi + 1 < len(markers) else len(hdr)
             station_cols = []   # (역명, 1-based 컬럼)
             for i in range(marker_idx + 1, end_idx):
-                label = hdr[i]
+                label = RENAME.get(hdr[i], hdr[i])
                 if not label:
                     break   # 2호선처럼 블록 길이가 짧아 뒤쪽 헤더가 빈 패딩인 경우
                 name, mkey = resolve(label)

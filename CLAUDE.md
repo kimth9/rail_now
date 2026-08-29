@@ -12,6 +12,7 @@
 - `data/line1_stops.csv` — 1호선 역명 절삭 복원 매핑 검수용
 - `output/kr_rail_timetable.sqlite` — 배포용 DB 번들 (현재 195 stops / 2,190 trips / 65,363 stop_times, 10.6MB)
 - 원본 엑셀(KTX·1호선 시각표)은 `RAW/`에 넣고 절대 수정하지 않는다.
+- `app/` — React/TS 웹앱(흡수통합, 상세는 §6 참조). 데이터 파이프라인(위 항목들)과는 완전히 별개 스택.
 
 노선마다 원본 엑셀 레이아웃이 완전히 달라 파서를 노선 계열별로 분리해 둔 것 — 하나로 합치면 더 취약해진다. 출력 스키마만 맞춰 `build_db.py`에서 합류. 상세 스키마·파싱 함정·검증 항목은 `README.md` §5~8 참조.
 
@@ -44,5 +45,5 @@ python scripts/build_db.py    output/kr_rail_timetable.sqlite
 ## 6. 참고 문서
 
 - `../프로젝트_표준_가이드.md` — 팀 폴더 표준
-- `../japanese_style_timetable/` — 이 프로젝트 이전에 작업한 코레일 시각표 앱 프로젝트(형제 폴더). TAGO API 역 매핑(265개 역 ↔ 노드 ID), 열차 종별 폴백, 심야 시각 보정 등 재사용 가치가 있는 자산이 있다. 단, 정차역 상세를 rail.blue 개인 사이트 내부 API로 가져오는 구조라 그대로 이식하지 말고 공식 소스로 대체할 것 — 상세는 `history.md` 2026-08-25 "기존 프로젝트 자산 조사" 항목 참조.
+- `app/` — 2026-08-28, 형제 프로젝트였던 `../japanese_style_timetable/`을 코드 전체 흡수통합(상세는 `app/CLAUDE.md` 상단 및 `history.md` 해당 날짜 항목 참조). TAGO API 역 매핑(265개 역 ↔ 노드 ID)·열차 종별 폴백·심야 시각 보정 등 재사용 가치가 있는 자산 포함. 단, `app/src/components/TrainModal.tsx`가 정차역 상세를 rail.blue 개인 사이트 내부 API로 가져오는 구조라 그대로 쓰지 말고 공식 소스(`output/kr_rail_timetable.sqlite`)로 교체할 것.
 - `docs/` — 프로젝트별 상세 문서
