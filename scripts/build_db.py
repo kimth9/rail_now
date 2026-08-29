@@ -24,7 +24,6 @@ OUT_GYEONGIN_EXPRESS = "tmp/out_gyeongin_express"
 OUT_GYEONGGANG = "tmp/out_gyeonggang"
 OUT_DONGHAE = "tmp/out_donghae"
 OUT_DAEGYEONG = "tmp/out_daegyeong"
-OUT_ILSAN = "tmp/out_ilsan"
 OUT_ITX_CHUNCHEON = "tmp/out_itx_chuncheon"
 OUT_SEOHAE = "tmp/out_seohae"
 OUT_ILBAN = "tmp/out_ilban"
@@ -33,18 +32,29 @@ OUT_DAEGU = ["tmp/out_daegu1", "tmp/out_daegu2", "tmp/out_daegu3"]
 OUT_DAEJEON1 = "tmp/out_daejeon"
 OUT_BUSAN = ["tmp/out_busan1", "tmp/out_busan2", "tmp/out_busan3", "tmp/out_busan4"]
 OUT_BUSAN_GIMHAE = "tmp/out_busan_gimhae"
-# 서울교통공사 — 평일/휴일이 별개 파일이라 노선당 출력폴더 목록(8호선만 한 파일에
-# 평일/휴일이 다 있어 폴더 1개)
+# 서울교통공사 2·7호선 — 평일/휴일이 별개 파일이라 노선당 출력폴더 목록 (기존
+# RAW 엑셀 기반 유지: 2026-08 기준 더 최신이라 판단해 공식 CSV로 안 바꿈)
 OUT_SEOUL = {
     "SEOUL2": ["tmp/out_seoul2", "tmp/out_seoul2_hol"],
-    "SEOUL5": ["tmp/out_seoul5", "tmp/out_seoul5_hol"],
-    "SEOUL6": ["tmp/out_seoul6", "tmp/out_seoul6_hol"],
     "SEOUL7": ["tmp/out_seoul7", "tmp/out_seoul7_hol"],
-    "SEOUL8": ["tmp/out_seoul8"],
-    "SEOUL9": ["tmp/out_seoul9", "tmp/out_seoul9_hol"],
 }
-SEOUL_PREFIX = {"SEOUL2": "S2", "SEOUL5": "S5", "SEOUL6": "S6",
-                "SEOUL7": "S7", "SEOUL8": "S8", "SEOUL9": "S9"}
+SEOUL_PREFIX = {"SEOUL2": "S2", "SEOUL7": "S7"}
+# 서울교통공사 3·5·6·8·9호선 — 공공데이터포털 공식 CSV(2026-06-16, 역 중심 목록)
+# 기반 scripts/parse_seoul_official.py 출력. 폴더 1개에 평일/토요일/휴일 3종
+# 다이어가 다 있어 대구·부산·광주1호선과 같은 SUN_ONLY_LABEL 처리가 필요하다.
+# 3호선은 기존에 '일산선'이라는 이름으로만 등록돼 있던 걸 이번에 정식으로
+# '3호선'으로 재정리(같은 전 구간, 오금~대화)했다.
+OUT_SEOUL_OFFICIAL = {
+    "SEOUL3": "tmp/out_seoul3_new", "SEOUL5": "tmp/out_seoul5_new",
+    "SEOUL6": "tmp/out_seoul6_new", "SEOUL8": "tmp/out_seoul8_new",
+    "SEOUL9": "tmp/out_seoul9_new",
+}
+SEOUL_OFFICIAL_PREFIX = {"SEOUL3": "S3O", "SEOUL5": "S5O", "SEOUL6": "S6O",
+                          "SEOUL8": "S8O", "SEOUL9": "S9O"}
+# 2호선 지선(성수지선·신정지선) — 본선은 기존 데이터 유지, 지선 6개 역만 같은
+# 공식 CSV에서 추출(scripts/parse_seoul2_branch.py). LINE_OF["SEOUL2"]로 등록해
+# 본선과 같은 '2호선' station_groups에 자동 병합된다.
+OUT_SEOUL2_BRANCH = "tmp/out_seoul2_branch"
 OUT_INCHEON1 = "tmp/out_incheon1"
 OUT_AIRPORT_RAILROAD = "tmp/out_airport_railroad"
 OUT_GIMPO_GOLDLINE = "tmp/out_gimpo_goldline"
@@ -63,7 +73,7 @@ DB = sys.argv[1] if len(sys.argv) > 1 else "output/kr_rail_timetable.sqlite"
 LINE_OF = {"KTX": "국철", "LINE1": "1호선", "SUIN_BUNDANG": "수인분당선",
            "ANSAN_GWACHEON": "안산과천선", "GYEONGUI_JUNGANG": "경의중앙선",
            "GYEONGUI": "경의선", "GYEONGCHUN": "경춘선", "GYEONGGANG": "경강선",
-           "DONGHAE": "동해선(전동)", "DAEGYEONG": "대경선", "ILSAN": "일산선",
+           "DONGHAE": "동해선(전동)", "DAEGYEONG": "대경선", "SEOUL3": "3호선",
            "ITX_CHUNCHEON": "ITX-청춘", "SEOHAE": "서해선(전동)",
            "DAEGU1": "대구1호선", "DAEGU2": "대구2호선", "DAEGU3": "대구3호선",
            "DAEJEON1": "대전1호선",
@@ -409,23 +419,47 @@ def main():
                     (r["service_id"], r["mon"], r["tue"], r["wed"],
                      r["thu"], r["fri"], r["sat"], r["sun"]))
 
-    # --- 일산선(3호선 오금~대화 전 구간 직결, 평일/휴일 한 파일에 같이 있음) ---
-    ism = {r["stop_id"]: add(r["name_ko"], LINE_OF["ILSAN"])
-           for r in rd(f"{OUT_ILSAN}/stops.csv")}
-    for t in rd(f"{OUT_ILSAN}/trips.csv"):
+    # --- 서울교통공사 3·5·6·8·9호선(공식 CSV, 2026-06-16) — 3종 다이어라
+    #     대구·부산·광주1호선과 같은 SUN_ONLY_LABEL 처리 필요 ---
+    for line_key, out_dir in OUT_SEOUL_OFFICIAL.items():
+        pfx = SEOUL_OFFICIAL_PREFIX[line_key]
+        som = {r["stop_id"]: add(r["name_ko"], LINE_OF[line_key])
+               for r in rd(f"{out_dir}/stops.csv")}
+        for t in rd(f"{out_dir}/trips.csv"):
+            cur.execute("INSERT INTO trips VALUES(?,?,?,?,?,?,?,?,?,?)",
+                        (f"{pfx}#" + t["trip_id"], t["train_no"], t["line_name"], t["formation"],
+                         t["direction"], SUN_ONLY_LABEL(t["service_id"]), som[t["origin"]],
+                         som[t["destination"]], t["next_train_no"], line_key))
+        for st in rd(f"{out_dir}/stop_times.csv"):
+            cur.execute("INSERT INTO stop_times VALUES(?,?,?,?,?,?)",
+                        (f"{pfx}#" + st["trip_id"], int(st["stop_seq"]),
+                         som[st["stop_id"]],
+                         int(st["arr_sec"]) if st["arr_sec"] else None,
+                         int(st["dep_sec"]) if st["dep_sec"] else None, st["stop_type"]))
+        for r in rd(f"{out_dir}/calendar.csv"):
+            cur.execute("INSERT OR IGNORE INTO calendar VALUES(?,?,?,?,?,?,?,?)",
+                        (SUN_ONLY_LABEL(r["service_id"]), r["mon"], r["tue"], r["wed"],
+                         r["thu"], r["fri"], r["sat"], r["sun"]))
+
+    # --- 2호선 지선(성수지선·신정지선, 같은 공식 CSV) — 본선은 기존 데이터
+    #     유지, 지선 6개 역만 여기서 추가. LINE_OF["SEOUL2"]로 등록해 본선과
+    #     같은 '2호선' station_groups에 자동 병합된다 ---
+    s2bm = {r["stop_id"]: add(r["name_ko"], LINE_OF["SEOUL2"])
+            for r in rd(f"{OUT_SEOUL2_BRANCH}/stops.csv")}
+    for t in rd(f"{OUT_SEOUL2_BRANCH}/trips.csv"):
         cur.execute("INSERT INTO trips VALUES(?,?,?,?,?,?,?,?,?,?)",
-                    ("IS#" + t["trip_id"], t["train_no"], t["line_name"], t["formation"],
-                     t["direction"], t["service_id"], ism.get(t["origin"], t["origin"]),
-                     ism.get(t["destination"], t["destination"]), t["next_train_no"], "ILSAN"))
-    for st in rd(f"{OUT_ILSAN}/stop_times.csv"):
+                    ("S2BR#" + t["trip_id"], t["train_no"], t["line_name"], t["formation"],
+                     t["direction"], SUN_ONLY_LABEL(t["service_id"]), s2bm[t["origin"]],
+                     s2bm[t["destination"]], t["next_train_no"], "SEOUL2_BRANCH"))
+    for st in rd(f"{OUT_SEOUL2_BRANCH}/stop_times.csv"):
         cur.execute("INSERT INTO stop_times VALUES(?,?,?,?,?,?)",
-                    ("IS#" + st["trip_id"], int(st["stop_seq"]),
-                     ism.get(st["stop_id"], st["stop_id"]),
+                    ("S2BR#" + st["trip_id"], int(st["stop_seq"]),
+                     s2bm[st["stop_id"]],
                      int(st["arr_sec"]) if st["arr_sec"] else None,
                      int(st["dep_sec"]) if st["dep_sec"] else None, st["stop_type"]))
-    for r in rd(f"{OUT_ILSAN}/calendar.csv"):
+    for r in rd(f"{OUT_SEOUL2_BRANCH}/calendar.csv"):
         cur.execute("INSERT OR IGNORE INTO calendar VALUES(?,?,?,?,?,?,?,?)",
-                    (r["service_id"], r["mon"], r["tue"], r["wed"],
+                    (SUN_ONLY_LABEL(r["service_id"]), r["mon"], r["tue"], r["wed"],
                      r["thu"], r["fri"], r["sat"], r["sun"]))
 
     # --- ITX-청춘 (여객열차 — 용산~춘천, 경의중앙선·경춘선과 선로 공유) ---
@@ -546,8 +580,10 @@ def main():
                          r["thu"], r["fri"], r["sat"], r["sun"]))
 
     # --- 부산김해경전철(비코레일) — 사상(부산2호선)·대저(부산3호선) 실제 환승역만
-    #     자동 병합, 나머지는 완전 별도 station_groups ---
-    bgm = {r["stop_id"]: add(r["name_ko"], LINE_OF["BUSAN_GIMHAE"])
+    #     자동 병합, 나머지는 완전 별도 station_groups. "공항"은 광주1호선의 무관한
+    #     동명역과 섞이지 않게 merge_key로 분리 ---
+    bgm = {r["stop_id"]: add(r["name_ko"], LINE_OF["BUSAN_GIMHAE"],
+                             merge_key=r.get("merge_key") or None)
            for r in rd(f"{OUT_BUSAN_GIMHAE}/stops.csv")}
     for t in rd(f"{OUT_BUSAN_GIMHAE}/trips.csv"):
         cur.execute("INSERT INTO trips VALUES(?,?,?,?,?,?,?,?,?,?)",
@@ -565,8 +601,10 @@ def main():
                     (r["service_id"], r["mon"], r["tue"], r["wed"],
                      r["thu"], r["fri"], r["sat"], r["sun"]))
 
-    # --- 서울교통공사 2·5·6·7·8·9호선(비코레일) — 2호선은 순환선(외선/내선),
-    #     나머지는 상행/하행. 각 노선 내부 환승은 이름 기반 자동 병합에 맡김 ---
+    # --- 서울교통공사 2·7호선(비코레일, 기존 RAW 엑셀 유지) — 2호선은
+    #     순환선(외선/내선), 7호선은 상행/하행. 각 노선 내부 환승은 이름 기반
+    #     자동 병합에 맡김. 나머지 서울교통공사 노선(3·5·6·8·9호선)은 위에서
+    #     공식 CSV로 별도 처리 ---
     for line_key, dirs in OUT_SEOUL.items():
         pfx = SEOUL_PREFIX[line_key]
         for out_dir in dirs:
@@ -912,8 +950,9 @@ def main():
         ("source_daegyeong", "대경선 시각표 (구미~경산, 대구권, 평일/휴일). "
                               "역 14개 중 6개(가천·고모·지천·신동·연화·약목)는 실재하는 "
                               "역이지만 대경선 열차가 통과만 함(공식 정차역은 8개)"),
-        ("source_ilsan", "일산선(서울 지하철 3호선 오금~대화 전 구간 직결) 시각표 (평일/휴일, "
-                          "2022.8.1.부터 원본 — 게시판에서 확인 가능한 최신본이나 다른 노선보다 오래됨)"),
+        ("source_seoul3", "서울 지하철 3호선(오금~대화 전 구간 직결) 시각표 — 공식 CSV 소스(아래 "
+                          "source_seoul_official 참조). 예전엔 '일산선'이라는 내부 이름으로만 "
+                          "등록돼 있던 걸 이번에 '3호선'으로 정식 재정리함(같은 노선 범위)"),
         ("source_itx_chuncheon", "ITX-청춘 시각표 (용산~춘천, 여객열차, 평일/휴일). "
                                   "경의중앙선(용산~청량리)·경춘선(청량리~춘천)과 선로 공유"),
         ("source_seohae", "수도권 전철 서해선 시각표 (대곡~원시, 일산 연장편 포함, 평일/휴일). "
@@ -951,17 +990,32 @@ def main():
                                 "2022.11.21 기준 — 부산 1~4호선보다 오래된 원본, 재확보 여지 "
                                 "있음). 원본 역명에 전부 '역' 접미사가 붙어있어 벗겨서 등록 — "
                                 "사상(부산2호선)·대저(부산3호선)에서 실제 환승역으로 자동 병합됨"),
-        ("source_seoul_metro", "서울교통공사 2·5·6·7·8·9호선(비코레일) 시각표. 2호선은 순환선이라 "
-                               "direction이 상행/하행이 아니라 outer(외선)/inner(내선)이고 본선 "
-                               "43개 역만 포함(성수지선·신정지선 미포함). 평일/휴일이 완전히 "
-                               "별개 파일로 배포되고 기준일 격차가 노선마다 다르다: 2·7호선은 "
-                               "평일 2026.8.21 vs 휴일 2022.4/6(4년+ 차이, 가장 심각), 5·6호선은 "
-                               "10~14개월, 9호선만 평일/휴일 기준일 일치(2024.3.30). 8호선은 "
-                               "2025.6.2 최신본 하나가 평일/휴일을 다 포함해 문제 없음. 재확보 "
-                               "전까지 이 상태로 진행 — 사용자 확인된 정책. 원본마다 절삭·구역명 "
-                               "표기가 섞여있어(가산디지털→가산디지털단지, 총신대입구/이수→ "
-                               "총신대입구(이수), 뚝섬유원지/자양→자양(뚝섬한강공원) 등) 최신 "
-                               "공식 표기로 통일함"),
+        ("source_seoul_metro", "서울교통공사 2·7호선(비코레일 RAW 엑셀, 기존 유지) 시각표. "
+                               "2호선은 순환선이라 direction이 상행/하행이 아니라 outer(외선)/ "
+                               "inner(내선)이고 본선 43개 역만 포함(성수지선·신정지선은 "
+                               "source_seoul_official 쪽에서 별도 반영). 평일/휴일이 완전히 "
+                               "별개 파일로 배포되고 기준일 격차가 있다: 평일 2026.8.21 vs "
+                               "휴일 2022.4/6(4년+ 차이) — 재확보 전까지 이 상태로 진행(사용자 "
+                               "확인된 정책, 2호선·7호선은 새 공식 CSV보다 이 RAW가 더 최신이라 "
+                               "판단해 안 바꿈, 2026-08-28). 원본마다 절삭·구역명 표기가 섞여있어 "
+                               "(가산디지털→가산디지털단지, 총신대입구/이수→총신대입구(이수), "
+                               "뚝섬유원지/자양→자양(뚝섬한강공원) 등) 최신 공식 표기로 통일함"),
+        ("source_seoul_official", "서울교통공사 3·5·6·8·9호선 + 2호선 지선(성수지선·신정지선) "
+                                  "시각표 — 공공데이터포털 '서울교통공사_서울 도시철도 "
+                                  "열차운행시각표_20260616' CSV(433,996행, scripts/"
+                                  "parse_seoul_official.py + parse_seoul2_branch.py). 기존 "
+                                  "RAW 엑셀(열차=행/역=열)과 달리 '역 하나당 그 역을 지나는 "
+                                  "모든 열차' 구조라 (호선,주중주말,방향,열차코드)로 묶어 트립을 "
+                                  "역추적함 — 급행 통과역은 행 자체가 없어(빈 시각 칸이 아니라) "
+                                  "stop_type이 전부 origin/destination/stop뿐. 주중주말이 "
+                                  "DAY/SAT/END(평일/토요일/휴일) 3종이라 대구·부산·광주1호선과 "
+                                  "같은 SUN_ONLY_LABEL 처리 적용. 1·2(본선)·4·7호선은 기존 데이터가 "
+                                  "더 최신이라 판단해 이 CSV로 안 바꿈(사용자 확인, 2026-08-28). "
+                                  "9호선 완행(C계열)은 old(2024-03-30 RAW)와 대조해 247/260 트립 "
+                                  "완전 동일·13건만 초 단위 미세 조정으로 검증됨. 9호선 급행(E계열) "
+                                  "은 232건 전부 정차 패턴 자체가 달라졌는데(예: 정차역 26→12개) "
+                                  "일부만이 아니라 급행 전체가 깨끗하게 갈려 실제 다이어 개정으로 "
+                                  "판단, 최신 데이터 그대로 채택함"),
         ("source_incheon1", "인천 도시철도 1호선(인천교통공사, 비코레일) 시각표. 원본이 `.xls`(구버전 "
                             "바이너리)라 openpyxl이 못 열어 xlrd로 읽음(프로젝트 최초 xlrd 의존성). "
                             "평일/토휴일 2종 — 토요일과 휴일을 하나로 묶은 다이어라 대구·부산과 달리 "
