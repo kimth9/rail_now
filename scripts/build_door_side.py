@@ -255,6 +255,11 @@ MULTI_ROW_RULES[("대전1호선", "G0835", "down")] = _const(("오른쪽", None)
 MULTI_ROW_RULES[("공항철도", "G0587", "up")] = _const(("왼쪽", None))
 MULTI_ROW_RULES[("공항철도", "G0587", "down")] = _const(("오른쪽", None))
 
+# 인천1호선 국제업무지구: 송도달빛축제공원 방면(up)이면 왼쪽, 검단호수공원 방면(down)이면
+# 오른쪽 — 행선(목적지)별로 문방향이 갈리는 역(사용자 확인, 2026-08-31).
+MULTI_ROW_RULES[("인천1호선", "G1023", "up")] = _const(("왼쪽", None))
+MULTI_ROW_RULES[("인천1호선", "G1023", "down")] = _const(("오른쪽", None))
+
 # 공항철도 검암: 종착이면 왼쪽. 아니면(인천공항/서울역 방면 공통 오른쪽) 오른쪽 —
 # 원본의 '양방향 대피/경합'(왼쪽) 행은 방향 무관 대피 상황을 가리키는 것으로 보여
 # evac_side로 흡수(공항철도는 이미 EVAC_SOURCE_LINES에 등록돼 대피 판정 대상).
@@ -398,7 +403,12 @@ def main():
             if r["arr_sec"] is None:
                 continue
         else:
-            if r["arr_sec"] is None or r["dep_sec"] is None:
+            # 36개 노선(KTX·일반열차 계열 + 인천1호선·대전1호선 등 다수 전동열차)은 원본이
+            # "역당 시각 1개"(출발역 기준 배차표 등) 구조라 arr_sec가 원천적으로 없다
+            # (2026-08-31 확인, 파서 버그 아닌 원본 데이터 한계). 문방향(normal_side)은
+            # 시각 구간이 필요 없는 고정값이라 dep_sec 하나만 있어도 판정 가능 — 대피(Tier A)
+            # 판정에만 arr_sec~dep_sec 구간이 필요하므로 그쪽은 아래에서 따로 가드한다.
+            if r["arr_sec"] is None and r["dep_sec"] is None:
                 continue
 
         origin_name, destination_name = trip_od.get(r["trip_id"], (None, None))
@@ -414,7 +424,9 @@ def main():
 
         door_side, is_evac, overtaken_by = normal_side, 0, None
         # 대피(Tier A) 판정은 '정차 중 추월' 개념이라 종착역에는 적용하지 않는다.
-        if evac_side and not is_destination:
+        # arr_sec·dep_sec 둘 다 있어야 대피 구간(도착~출발) 비교가 가능하므로, 위에서
+        # dep_sec만으로 통과한 행(arr_sec 없음)은 여기서 자동으로 평시값만 쓰게 된다.
+        if evac_side and not is_destination and r["arr_sec"] is not None and r["dep_sec"] is not None:
             src_lines = evac_source_lines_for(r["line_name"])
             if src_lines is None and r["line_name"].startswith(LINE1_PREFIX):
                 src_lines = line1_variants
