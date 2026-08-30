@@ -1,4 +1,4 @@
-# kr-rail-timetable — 한국 철도 시각표 안드로이드 앱
+# rail_now — 한국 철도 시각표 안드로이드 앱
 
 > 상태: 데이터 파이프라인 구축 중(앱 미착수) · 스택: Kotlin/Compose + Room, Python 3(파서) · 최종 검증: 2026-08-25(서해선(전동) 반영 — 다운로드는 됐지만 파싱을 빠뜨렸던 마지막 코레일 전동열차 노선)
 
@@ -32,6 +32,10 @@ python3 scripts/parse_gwangwang.py <관광열차.xlsx>            tmp/out_gwangw
 
 # CSV -> SQLite 번들
 python3 scripts/build_db.py output/kr_rail_timetable.sqlite
+
+# (선택) 열차 출입문 방향 데이터 얹기 — 순서 중요, build_db.py 뒤에 실행
+python3 scripts/build_door_directions.py output/kr_rail_timetable.sqlite output/열차_출입문_방향_260828.xlsx
+python3 scripts/build_door_side.py output/kr_rail_timetable.sqlite
 ```
 
 산출된 `kr_rail_timetable.sqlite`를 안드로이드 `assets/`에 넣고 Room으로 연다.
@@ -152,6 +156,12 @@ trips(trip_id, train_no, line_name, formation, direction,
 stop_times(trip_id, stop_seq, stop_id, arr_sec, dep_sec, stop_type)
 calendar(service_id, mon, tue, wed, thu, fri, sat, sun)
 meta(key, value)
+
+-- 아래 2개는 build_db.py가 아니라 별도 스크립트가 뒤이어 채우는 레이어(§1 참조)
+door_directions(id, line_sheet, group_id, station_name, direction,
+                 normal_side, evac_side, type)      -- 역 단위 정적 참조표. 열차/트립과 무관
+stop_door_side(trip_id, stop_seq, door_side, is_evac, overtaken_by_trip_id)
+                                                     -- 트립별 실제 하차문 계산 결과
 ```
 
 GTFS 개념을 차용했다. 향후 GTFS 도구 생태계 활용이나 데이터 공개 시 유리하다.
@@ -162,6 +172,7 @@ GTFS 개념을 차용했다. 향후 GTFS 도구 생태계 활용이나 데이터
 - **`stop_type`은 5종** — `origin` / `stop` / `pass` / `junction` / `destination`. `pass`는 급행 통과역의 통과 시각으로, "이 열차는 우리 역을 통과합니다" 안내에 쓸 수 있다.
 - **`next_train_no` 컬럼은 없다.** 원래 1호선 원본의 연계열번(종착 후 이어받는 열차번호)을 담았으나, 전체 29,812개 trip 중 값이 있는 건 7호선 748건(연계열번 외에 입고/주박/회송 텍스트 라벨 포함)뿐이라 컬럼째 제거했다(2026-08-29).
 - 인덱스: `stop_times(stop_id, dep_sec)`, `stop_times(trip_id, stop_seq)`, `stops(group_id)`.
+- **`stop_door_side`는 Tier A(추월 열차가 자기 정차역에 `stop_type='pass'`로 통과 시각을 남기는 노선)만 자동 계산한다.** KTX-이음/무궁화/ITX-마음처럼 통과역을 아예 행으로 안 남기는 노선이 추월하는 경우(중앙선·대경선·동해선 일부)는 Tier B로 분류해 계산 대상에서 제외하고 `door_directions`의 평시값(`normal_side`)만 폴백으로 쓴다. 또한 `door_directions`에 같은 역(`group_id`+`line_sheet`)으로 행이 2개 이상인 역(노선 분기·환승으로 방면별 문방향이 갈리는 약 40개 조합, 구로·신도림·수원·병점 등)도 이번 버전에서는 잘못 확정하는 것보다 낫다고 보고 비워둔다(2026-08-30, 후속 과제는 `todo.md` 참조).
 
 ### 현재 적재량
 
@@ -172,6 +183,10 @@ GTFS 개념을 차용했다. 향후 GTFS 도구 생태계 활용이나 데이터
 | trips | 6,693 (KTX 621 + 1호선 평일 628 / 휴일 574 + 경인급행 367 + 수인분당선 779 + 안산과천선 873 + 경의중앙선 332 + 경의선 106 + 경춘선 216 + 경강선 221 + 동해선(전동) 198 + 대경선 194 + 일산선 769 + ITX-청춘 88 + 서해선(전동) 320 + 일반열차 393 + 관광열차 14) |
 | stop_times | 196,856 |
 | DB 크기 | 31.3 MB |
+| door_directions (별도 스크립트) | 1,168 |
+| stop_door_side (별도 스크립트) | 543,706 (대피 316) |
+
+> 위 표의 상단 4행(stops~stop_times~DB 크기)은 2026-08-25 초기 반영 시점 스냅샷이라 그 뒤 노선 추가로 실제로는 더 크다(현재 실측치는 `history.md` 최신 항목 참조) — `door_directions`/`stop_door_side` 2행만 2026-08-30 실측치.
 
 ---
 

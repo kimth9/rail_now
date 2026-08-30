@@ -1,4 +1,4 @@
-# kr-rail-timetable — Claude 작업 가이드
+# rail_now — Claude 작업 가이드
 
 ## 1. 목표
 

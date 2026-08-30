@@ -19,6 +19,9 @@ SHEET_LINE_ALIASES = {
     "경의중앙선": ["경의중앙선", "경의선"],
     "서해선": ["서해선(전동)"],
     "인천2호선": ["인천2호선(추정)"],
+    "GTX-A": ["GTX-A(운정~서울)", "GTX-A(수서~동탄)"],
+    "동해선": ["동해선(전동)"],
+    "용인경전철": ["용인경전철(추정)"],
 }
 
 SCHEMA = """
@@ -26,8 +29,7 @@ DROP TABLE IF EXISTS door_directions;
 CREATE TABLE door_directions(
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     line_sheet TEXT, group_id TEXT, station_name TEXT, direction TEXT,
-    normal_side TEXT, evac_side TEXT, type TEXT, status TEXT,
-    note TEXT, source TEXT
+    normal_side TEXT, evac_side TEXT, type TEXT
 );
 """
 
@@ -66,8 +68,8 @@ def main():
             else:
                 unmatched.append((sheet, station))
             cur.execute(
-                "INSERT INTO door_directions VALUES(NULL,?,?,?,?,?,?,?,?,?,?)",
-                (sheet, group_id, station, *row[1:8]),
+                "INSERT INTO door_directions VALUES(NULL,?,?,?,?,?,?,?)",
+                (sheet, group_id, station, *row[1:5]),
             )
 
     con.commit()

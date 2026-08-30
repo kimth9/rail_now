@@ -1,13 +1,13 @@
 # japanese_style_timetable — Claude 작업 가이드
 
-> **2026-08-28, kr_rail로 흡수통합됨** — 독립 프로젝트였던 `japanese_style_timetable`을 자산으로
-> `kr_rail/app/`에 코드 전체(node_modules·dist·.git·logs·.env 제외) 그대로 옮겨왔다. 팀 공통
-> 규칙과 kr_rail 자체 CLAUDE.md는 상위 폴더에서 자동 상속된다. 재사용 가치가 있는 자산:
-> TAGO API 역 매핑(`data/tago_station_mapping.csv`, 265개 역), 열차 종별 폴백 스타일, 심야
-> 시각 보정(`getAdjustedHour`). **주의**: `src/components/TrainModal.tsx`가 정차역 상세를
-> rail.blue 개인 사이트 내부 API로 가져오는 구조 — 실제로 다시 쓰기 전에 공식 소스(kr_rail의
-> `output/kr_rail_timetable.sqlite`)로 교체해야 한다. 원본 프로젝트 폴더는 아직 남아있음(정리
-> 여부는 별도 결정).
+> **2026-08-28, kr_rail로 흡수통합됨**(2026-08-30 프로젝트 자체가 `rail_now`로 개칭) — 독립
+> 프로젝트였던 `japanese_style_timetable`을 자산으로 `rail_now/app/`에 코드 전체(node_modules·
+> dist·.git·logs·.env 제외) 그대로 옮겨왔다. 팀 공통 규칙과 rail_now 자체 CLAUDE.md는 상위
+> 폴더에서 자동 상속된다. 재사용 가치가 있는 자산: TAGO API 역 매핑(`data/tago_station_mapping.csv`,
+> 265개 역), 열차 종별 폴백 스타일, 심야 시각 보정(`getAdjustedHour`). **주의**:
+> `src/components/TrainModal.tsx`가 정차역 상세를 rail.blue 개인 사이트 내부 API로 가져오는
+> 구조 — 실제로 다시 쓰기 전에 공식 소스(rail_now의 `output/kr_rail_timetable.sqlite`)로
+> 교체해야 한다. 원본 프로젝트 폴더는 아직 남아있음(정리 여부는 별도 결정).
 
 ## 1. 목표
 
