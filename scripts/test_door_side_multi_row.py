@@ -118,7 +118,31 @@ def main():
     assert n == 0, f"신호 불충분으로 스킵해야 할 광운대 하행 종착에 {n}건이 채워져 있음"
     print("OK  광운대 하행 종착(확인필요)은 예정대로 스킵됨")
 
-    print(f"\n{len(KNOWN_CASES)}건 + 부수 검증 2건 전부 통과")
+    # door_side에 '왼쪽'/'오른쪽' 외의 값('확인필요'·'미판정'·'미개통' 등 원본 placeholder가
+    # 그대로 샌 것)이 하나도 없는지 — 2026-08-31 실제로 2,408건 새고 있던 걸 발견해 수정함
+    cur.execute("SELECT DISTINCT door_side FROM stop_door_side WHERE door_side NOT IN ('왼쪽', '오른쪽')")
+    bad = cur.fetchall()
+    assert not bad, f"door_side에 placeholder 값이 새고 있음: {bad}"
+    print("OK  door_side에 placeholder 값 없음(왼쪽/오른쪽만 존재)")
+
+    # 동두천 상행 종착도 위와 같은 이유(원본 '확인필요')로 스킵돼야 함 — 예전엔 방향-무관
+    # 기본행(왼쪽/일반)으로 잘못 새고 있었음(2026-08-31 발견한 resolve_door 설계 버그)
+    cur.execute(
+        """
+        SELECT COUNT(*) FROM stop_door_side sds
+        JOIN stop_times st ON sds.trip_id = st.trip_id AND sds.stop_seq = st.stop_seq
+        JOIN stops s ON st.stop_id = s.stop_id
+        JOIN station_groups sg ON s.group_id = sg.group_id
+        JOIN trips t ON st.trip_id = t.trip_id
+        WHERE sg.name_ko = '동두천' AND s.line = '1호선' AND t.direction = 'up'
+          AND st.stop_type = 'destination'
+        """
+    )
+    (n,) = cur.fetchone()
+    assert n == 0, f"신호 불충분으로 스킵해야 할 동두천 상행 종착에 {n}건이 채워져 있음"
+    print("OK  동두천 상행 종착(확인필요)은 예정대로 스킵됨")
+
+    print(f"\n{len(KNOWN_CASES)}건 + 부수 검증 4건 전부 통과")
 
 
 if __name__ == "__main__":

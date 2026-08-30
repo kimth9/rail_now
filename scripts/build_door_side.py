@@ -54,6 +54,16 @@ def evac_source_lines_for(line_name):
     return None
 
 
+VALID_SIDES = {"왼쪽", "오른쪽"}
+
+# 규칙 함수가 반환할 수 있는 특수값: "이 방향 키는 확실히 신뢰 불가라 최종 스킵" —
+# 일반 None(= "이 키에선 판단 안 함, 다음 방향 키로 폴백해봐라")과 구분하기 위한 것.
+# 예: 동두천 상행 종착은 원본 자체가 '확인필요'라 폴백 없이 그냥 비워야 하는데, 단순
+# None을 쓰면 같은 역의 방향-무관 기본행(왼쪽/일반)으로 잘못 새서 이 sentinel이 필요했다
+# (2026-08-31 실제로 이렇게 새고 있던 걸 발견).
+SKIP = object()
+
+
 def norm_direction(raw):
     """door_directions.direction(자유 텍스트) -> trips.direction('up'/'down') 정규화.
     괄호 설명이 붙은 값(예: '상행(중앙보훈병원 방면)')도 접두어만 보고 매칭한다.
@@ -154,7 +164,7 @@ MULTI_ROW_RULES = {
     ("1호선", "G0306", "up"): _by_is_destination(("오른쪽", None), ("왼쪽", None)),
     # 광운대 하행: '일반'(비종착)은 오른쪽(2026-08-31 사용자 확인). 종착 쪽은 원본 정상측
     # 값이 '확인필요'라는 상태 문자열이라 여전히 스킵(None).
-    ("1호선", "G0306", "down"): _by_is_destination(None, ("오른쪽", None)),
+    ("1호선", "G0306", "down"): _by_is_destination(SKIP, ("오른쪽", None)),
 
     # 5호선 강동 상행: 마천지선 출발(origin)이면 왼쪽, 그 외(본선/하남선)는 오른쪽.
     ("5호선", "G0617", "up"): _by_origin({"마천"}, ("왼쪽", None), ("오른쪽", None)),
@@ -214,7 +224,7 @@ MULTI_ROW_RULES[("1호선", "G0292", "up")] = _NORYANGJIN_RULE
 MULTI_ROW_RULES[("1호선", "G0292", "down")] = _NORYANGJIN_RULE
 
 # 동두천 상행: 종착이면 원본 정상측 값이 '확인필요'라 스킵, 아니면 일반(왼쪽)으로 폴백.
-MULTI_ROW_RULES[("1호선", "G0323", "up")] = _by_is_destination(None, ("왼쪽", None))
+MULTI_ROW_RULES[("1호선", "G0323", "up")] = _by_is_destination(SKIP, ("왼쪽", None))
 
 # 안양·의왕·군포·금천구청 "경부급행B(지상서울~천안)": [[project_line1_gyeongbu_ab_express]]
 # 메모리로 2026-08-31 해소 — B급행은 지상 서울역~천안/신창을 잇는 별개 계통으로 실제로는
@@ -282,11 +292,18 @@ def main():
         line_to_sheet[line] = sheet
 
     # 2) door_directions: (line_sheet, group_id, 정규화된 방향) 단위로 묶어 단일행/다중행 분리
+    # normal_side가 '왼쪽'/'오른쪽'이 아닌 행('확인필요'·'미판정'·'미개통'·'승강장없음' 등
+    # 원본이 아직 못 채운 placeholder, 2026-08-31 12개 역에서 발견)은 아예 제외한다 —
+    # 안 그러면 그 문자열이 실제 문방향인 것처럼 stop_door_side에 그대로 새어 들어간다.
+    # evac_side도 마찬가지로 방향값이 아니면(예: 의정부의 '종착') None으로 무시한다.
     cur.execute("SELECT line_sheet, group_id, direction, normal_side, evac_side FROM door_directions")
     grouped = defaultdict(list)
     for r in cur.fetchall():
+        if r["normal_side"] not in VALID_SIDES:
+            continue
+        evac = r["evac_side"] if r["evac_side"] in VALID_SIDES else None
         key = (r["line_sheet"], r["group_id"], norm_direction(r["direction"]))
-        grouped[key].append((r["normal_side"], r["evac_side"]))
+        grouped[key].append((r["normal_side"], evac))
 
     single_door = {}
     multi_keys_total = 0
@@ -320,6 +337,8 @@ def main():
             rule = MULTI_ROW_RULES.get(key)
             if rule:
                 result = rule(ctx)
+                if result is SKIP:
+                    return None
                 if result:
                     return result
                 continue
