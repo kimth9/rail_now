@@ -5,7 +5,7 @@
 
 ## 진행 중
 
-- [ ] 없음
+- [ ] **`git worktree repair` 실행 (2026-08-30, 프로젝트 폴더 `kr_rail` → `rail_now` 개칭 후속)** — 폴더 개칭 자체는 커밋까지 끝났으나, 현재 세션이 `kr_rail`을 작업 디렉터리로 잡고 있어 실제 폴더 rename(OS 레벨)은 못 하고 사용자에게 안내만 한 상태. 사용자가 이 세션을 닫고 폴더명을 직접 바꾼 뒤 `rail_now` 경로에서 새 세션을 열면, `.claude/worktrees/app-feature-design` worktree가 옛 절대경로(`.../kr_rail/...`)를 참조하고 있어 깨져 있을 것 — 새 세션에서 `git worktree repair` 한 번 실행해서 고칠 것. `git worktree list`로 정상 인식되는지, `.claude/worktrees/app-feature-design`에서 `git status`가 되는지 확인까지가 완료 기준.
 
 ## 대기
 
