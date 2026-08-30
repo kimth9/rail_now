@@ -38,7 +38,7 @@ npm run dev:backend     # Express만 (tsx api/server.ts)
 
 - 열차 종별(KTX/KTX-산천/SRT/ITX-마음/ITX-청춘/무궁화)마다 고유 테두리 스타일이 있고, 행선지 4글자 이상은 "3글자.." 형태로 축약한다(`TrainBox`).
 - 시간 표시는 0~3시를 24~27시로 변환하는 `getAdjustedHour` 로직을 쓴다(`App.tsx`) — 심야 열차를 같은 날 시각표에 이어 붙이기 위함.
-- `api/server.ts`는 `DATA_GO_KR_SERVICE_KEY` 하나만 사용하고, `scripts/fetch_station_data.py`는 `TRAIN_TIME_API_KEY_3/4`라는 다른 이름의 환경변수를 참조한다 — 실제 `.env`에는 `TAGO_API_KEY_1/2/3`만 있어 스크립트를 돌리려면 이름을 맞춰야 한다(README §5 참조).
+- **`.env`는 프로젝트 폴더(OneDrive 동기화 대상) 밖 `%LOCALAPPDATA%\rail_now\.env`에 둔다**(2026-08-30, 과거 zip 압축 시 평문 유출 이력 때문에 이전). `api/server.ts`는 `MOLIT_TAGO_KEY`(1613000 열차시간표), `scripts/fetch_station_data.py`는 `KORAIL_KEY`(B551457 열차운행정보)를 읽는다. `package.json`의 `dev:backend`/`start`/`serve`가 `--env-file=%LOCALAPPDATA%\rail_now\.env`로 그 경로를 지정한다.
 - vite dev 서버는 `/api` 요청을 `localhost:3000`(Express)으로 프록시한다(`vite.config.ts`).
 
 ## 5. (해당 시) 이 프로젝트만의 예외·추가 규칙

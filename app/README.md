@@ -36,18 +36,17 @@ Windows에서는 `setup.bat`(최초 1회, `npm install`) → `run.bat`(실행)�
 
 ## 3. 환경 설정
 
-1. `.env.example`을 `.env`로 복사
+1. `.env.example`을 `%LOCALAPPDATA%\rail_now\.env`로 복사 (프로젝트 폴더는 OneDrive 동기화 대상이라 시크릿을 그 밖에 둔다, 2026-08-30)
 2. TAGO(공공데이터포털) 발급 API 키를 입력 — 발급처는 `.env.example` 주석 참조
-3. `.env`는 절대 외부에 공유·복사하지 않는다 (버전관리가 없어 OneDrive 동기화 외에는 안전장치가 없음)
+3. `.env`는 절대 외부에 공유·복사하지 않는다 (버전관리가 없어 로컬 파일 자체가 유일한 보관처)
 
 ## 4. 동작 방식
 
-사용자가 출발역·도착역·날짜를 입력하면(`StationInput`, `DatePicker`) 프론트엔드가 `src/services/apiClient.ts`를 통해 `api/server.ts`(Express)에 요청하고, 서버는 TAGO 공공데이터 API(`DATA_GO_KR_SERVICE_KEY`)를 프록시 호출해 열차 시각표를 조회한다. 응답은 `Center-Hour` 3단 그리드(시각 중앙, 좌측 출발분/우측 도착분)로 렌더링되며, 열차 클릭 시 `TrainModal`이 상세 경로·구간별 소요 시간을 표시한다. 로컬 개발 시 vite dev 서버(`vite.config.ts`)가 `/api` 요청을 `localhost:3000`(Express)으로 프록시한다.
+사용자가 출발역·도착역·날짜를 입력하면(`StationInput`, `DatePicker`) 프론트엔드가 `src/services/apiClient.ts`를 통해 `api/server.ts`(Express)에 요청하고, 서버는 TAGO 공공데이터 API(`MOLIT_TAGO_KEY`)를 프록시 호출해 열차 시각표를 조회한다. 응답은 `Center-Hour` 3단 그리드(시각 중앙, 좌측 출발분/우측 도착분)로 렌더링되며, 열차 클릭 시 `TrainModal`이 상세 경로·구간별 소요 시간을 표시한다. 로컬 개발 시 vite dev 서버(`vite.config.ts`)가 `/api` 요청을 `localhost:3000`(Express)으로 프록시한다.
 
 ## 5. 알려진 제약·주의
 
-- `scripts/fetch_station_data.py`는 `TRAIN_TIME_API_KEY_3`/`TRAIN_TIME_API_KEY_4` 환경변수를 참조하지만, `.env`에는 `TAGO_API_KEY_1/2/3`만 정의되어 있어 이름이 일치하지 않는다. 이 스크립트를 실행하려면 실제 사용 중인 키 이름에 맞게 코드를 수정하거나 `.env`에 해당 이름의 키를 추가해야 한다.
-- `api/server.ts`는 `dotenv`를 로드하지 않고 `process.env`를 직접 참조한다 — 로컬 개발 시에는 별도 방법(예: `dotenv-cli`)으로 `.env`를 주입해야 한다.
+- `api/server.ts`는 `dotenv`를 로드하지 않고 `process.env`를 직접 참조한다 — `package.json`의 `dev:backend`/`start`/`serve`가 Node 네이티브 `--env-file=%LOCALAPPDATA%\rail_now\.env` 플래그로 주입한다.
 - **Azure 배포·GitHub 연결 모두 중단됨(비용 문제, 2026-07)** — 이 프로젝트는 순수 로컬 실행(`npm run dev`) 전용이며 어디에도 배포되어 있지 않다. 재배포가 필요해지면 별도 호스팅(프론트엔드 정적 배포 + 백엔드 서버 호스팅)을 처음부터 다시 구성해야 한다.
 - 로컬 git으로만 버전관리(2026-07-06 재도입, 원격 없음) — GitHub 등 원격 저장소 연결은 없으므로 로컬 git 이력 + OneDrive 동기화에만 의존한다.
 - 테스트 스위트 없음 — 향후 도입 시 `todo.md` 참조.

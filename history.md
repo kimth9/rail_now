@@ -422,3 +422,11 @@
 - 메인 저장소에서 `git worktree repair`를 인자 없이 실행했더니 반영이 안 돼(`git worktree list`가 여전히 옛 경로 표시), worktree의 현재 경로를 명시(`git worktree repair "<rail_now 경로>/.claude/worktrees/app-feature-design"`)해서 재실행 — 이번엔 "gitdir incorrect" 메시지와 함께 정상 반영됨.
 - 양방향 참조 파일 확인: 메인 저장소의 `.git/worktrees/app-feature-design/gitdir`와 worktree 쪽 `.git`(gitdir 포인터) 둘 다 `rail_now` 새 경로로 갱신된 것을 직접 `cat`으로 확인.
 - 완료 기준대로 `git worktree list`(두 worktree 모두 정상, prunable 없음)와 worktree 안에서 `git status`(`nothing to commit, working tree clean`) 재확인까지 마침. `todo.md`의 해당 항목 삭제.
+
+## 2026-08-30 (계속) — Claude (`app/` TAGO 키를 OneDrive 밖 `%LOCALAPPDATA%\rail_now\.env`로 이전)
+
+- 사용자가 TAGO(공공데이터포털) 키를 새로 발급받아 `C:\Users\User\AppData\Local\rail_now\.env`에 저장 — 프로젝트 폴더 자체가 OneDrive 동기화 대상이라 시크릿을 아예 그 밖에 두기로 결정(과거 zip 압축 평문 유출 이력 재발 방지, `todo.md` 위생 항목과 연결). 새 파일 확인해보니 키 이름이 `MOLIT_TAGO_KEY`/`KORAIL_KEY`로, 기존 코드가 읽던 이름(`DATA_GO_KR_SERVICE_KEY`, `TRAIN_TIME_API_KEY_3/4`)과 전혀 다르고 경로도 코드가 찾는 곳(`app/.env`)이 아니어서, 새 위치·새 이름에 맞춰 코드를 고치기로 함.
+- `app/api/server.ts`(`DATA_GO_KR_SERVICE_KEY`→`MOLIT_TAGO_KEY`)와 `app/scripts/fetch_station_data.py`(`TRAIN_TIME_API_KEY_3/4`→`KORAIL_KEY`, `load_dotenv` 경로를 `%LOCALAPPDATA%\rail_now\.env`로 변경, `os.environ['LOCALAPPDATA']` 사용)를 수정. 두 API의 실제 발급 주체가 다르다는 걸 확인: `server.ts`가 부르는 `1613000/TrainInfo`는 국토교통부(MOLIT) 계열, `fetch_station_data.py`가 부르는 `B551457/run/v2`는 한국철도공사(KORAIL) 계열 — 새 키 이름과 실제 대응 관계 일치.
+- `package.json`의 `dev:backend`/`start`/`serve`에서 Node 네이티브 `--env-file=.env`를 `--env-file=%LOCALAPPDATA%\rail_now\.env`로 변경(별도 `dotenv-cli` 패키지 없이 cmd.exe의 `%VAR%` 확장에 의존 — Windows 전용 프로젝트라 무해).
+- `npm install` 후 `dev:backend` 기동해 `/api/health`·`/api/stations`·`/api/timetable`(서울→부산) 실제 호출까지 성공 확인(KTX·무궁화 등 74개 열차 정상 응답) — 새 키가 실제 TAGO API에서 유효함을 확인. `fetch_station_data.py` 쪽도 `KORAIL_KEY` 로드만 별도로 python으로 검증(정상).
+- 문서 동기화: `app/.env.example`(새 키 이름·위치 주석), `app/CLAUDE.md` §4, `app/README.md` §3~5의 환경변수 이름 불일치 서술을 전부 새 이름·경로로 갱신. `app/todo.md`·루트 `todo.md`(코레일 `travelerTrainRunPlan2` 검증 항목의 차단 사유 해소)에서 관련 항목 정리, 루트 `todo.md` 위생 항목은 "재발급·이전 완료, 구 키의 data.go.kr 계정 내 폐기 여부만 사용자 확인 대기"로 갱신(재발급이 곧 로테이션 완료를 뜻하진 않아 확인 남겨둠).

@@ -5,11 +5,11 @@
   "type": "module",
   "scripts": {
     "dev:frontend": "vite",
-    "dev:backend": "tsx --env-file=.env api/server.ts",
+    "dev:backend": "tsx --env-file=%LOCALAPPDATA%\\rail_now\\.env api/server.ts",
     "dev": "concurrently \"npm run dev:frontend\" \"npm run dev:backend\"",
     "build": "vite build",
-    "start": "node --env-file=.env --import tsx api/server.ts",
-    "serve": "node --env-file=.env --import tsx api/server.ts",
+    "start": "node --env-file=%LOCALAPPDATA%\\rail_now\\.env --import tsx api/server.ts",
+    "serve": "node --env-file=%LOCALAPPDATA%\\rail_now\\.env --import tsx api/server.ts",
     "build:server": "echo 'Server uses tsx directly for deployment'"
   },
   "engines": {

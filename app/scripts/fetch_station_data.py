@@ -4,11 +4,11 @@ import pandas as pd
 from dotenv import load_dotenv
 import time
 
-# .env 파일 로드 (프로젝트 루트의 .env)
-load_dotenv(os.path.join(os.path.dirname(__file__), '..', '.env'))
+# .env 파일 로드 (OneDrive 동기화 폴더 밖, %LOCALAPPDATA%\rail_now\.env)
+load_dotenv(os.path.join(os.environ['LOCALAPPDATA'], 'rail_now', '.env'))
 
 # API 키 설정
-KEY = os.getenv('TRAIN_TIME_API_KEY_4') or os.getenv('TRAIN_TIME_API_KEY_3')
+KEY = os.getenv('KORAIL_KEY')
 
 # API 엔드포인트
 RESULT_URL = "https://apis.data.go.kr/B551457/run/v2/travelerTrainRunInfo2"

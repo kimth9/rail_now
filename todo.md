@@ -26,10 +26,10 @@
 
 ### 확인 필요
 
-- [ ] 코레일 `travelerTrainRunPlan2` 검증 — KTX 파일에 없는 중간역 도착시각과 운전정차를 보완할 수 있는지. `japanese_style_timetable/scripts/fetch_station_data.py`에 호출 코드가 이미 있으나 환경변수 이름 불일치(`TRAIN_TIME_API_KEY_3/4` vs `.env`의 `TAGO_API_KEY_*`)로 실행 불가 상태 — 이름만 맞추면 반나절이면 판가름
+- [ ] 코레일 `travelerTrainRunPlan2` 검증 — KTX 파일에 없는 중간역 도착시각과 운전정차를 보완할 수 있는지. `app/scripts/fetch_station_data.py`에 호출 코드가 이미 있고 2026-08-30 환경변수 이름 불일치(`TRAIN_TIME_API_KEY_3/4`)도 `KORAIL_KEY`로 정리돼 실행 가능한 상태 — 실제 호출·판정만 남음
 - [ ] 앱 스택 확정 — README 상태줄의 Kotlin/Compose + Room은 가정값
 - [ ] 일반열차 원본 데이터 이상치 원본 재확인 — 호남선 1491/1492(종착 후 잔재 시각), 장항선 1246(종착역 라벨 자체가 틀림, 실제로는 홍성 이후 평택까지 정상 운행). 코레일에 다음 개정판이 나오면 고쳐졌는지부터 확인, 안 고쳐졌으면 수동 보정표 필요
 
 ### 위생
 
-- [ ] `japanese_style_timetable`의 `.env` 키 3개 로테이션 — zip 압축 시 평문 포함된 채로 외부에 전달된 이력 있음
+- [ ] `japanese_style_timetable`(=현 `app/`) 구 키를 data.go.kr 계정에서 폐기 — 재발급·이전(`%LOCALAPPDATA%\rail_now\.env`) 자체는 2026-08-30 완료됐으나, 과거 zip 압축 시 평문 유출된 구 키가 data.go.kr 계정에 아직 살아있다면 삭제 필요(사용자 확인 대기)

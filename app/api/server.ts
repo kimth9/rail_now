@@ -84,12 +84,12 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-const SERVICE_KEYS = process.env.DATA_GO_KR_SERVICE_KEY
-  ? [process.env.DATA_GO_KR_SERVICE_KEY]
+const SERVICE_KEYS = process.env.MOLIT_TAGO_KEY
+  ? [process.env.MOLIT_TAGO_KEY]
   : [];
 
 if (SERVICE_KEYS.length === 0) {
-  console.error('[CRITICAL] DATA_GO_KR_SERVICE_KEY 환경변수가 설정되지 않았습니다.');
+  console.error('[CRITICAL] MOLIT_TAGO_KEY 환경변수가 설정되지 않았습니다.');
 }
 
 const stationRank: Record<string, number> = stationRankData;
