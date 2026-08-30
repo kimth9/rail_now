@@ -430,3 +430,4 @@
 - `package.json`의 `dev:backend`/`start`/`serve`에서 Node 네이티브 `--env-file=.env`를 `--env-file=%LOCALAPPDATA%\rail_now\.env`로 변경(별도 `dotenv-cli` 패키지 없이 cmd.exe의 `%VAR%` 확장에 의존 — Windows 전용 프로젝트라 무해).
 - `npm install` 후 `dev:backend` 기동해 `/api/health`·`/api/stations`·`/api/timetable`(서울→부산) 실제 호출까지 성공 확인(KTX·무궁화 등 74개 열차 정상 응답) — 새 키가 실제 TAGO API에서 유효함을 확인. `fetch_station_data.py` 쪽도 `KORAIL_KEY` 로드만 별도로 python으로 검증(정상).
 - 문서 동기화: `app/.env.example`(새 키 이름·위치 주석), `app/CLAUDE.md` §4, `app/README.md` §3~5의 환경변수 이름 불일치 서술을 전부 새 이름·경로로 갱신. `app/todo.md`·루트 `todo.md`(코레일 `travelerTrainRunPlan2` 검증 항목의 차단 사유 해소)에서 관련 항목 정리, 루트 `todo.md` 위생 항목은 "재발급·이전 완료, 구 키의 data.go.kr 계정 내 폐기 여부만 사용자 확인 대기"로 갱신(재발급이 곧 로테이션 완료를 뜻하진 않아 확인 남겨둠).
+- 사용자가 data.go.kr 계정에서 구 키 폐기 상태를 직접 확인 — 이미 폐기 처리되어 있음을 확인받아 `todo.md` 위생 항목("japanese_style_timetable .env 키 3개 로테이션") 완전 해소, 항목 삭제.
