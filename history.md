@@ -415,3 +415,10 @@
 - `todo.md`에 남아있던 "프로젝트명 확정" 항목을 사용자가 `rail_now`로 결정하며 해소. `git worktree`(`app-feature-design`)가 폴더 안에 걸려 있어(절대경로 상호참조 구조) 폴더명 변경 전 사용자와 처리 방식 확인 — worktree는 유지하고 `git worktree repair`로 경로만 고치는 쪽으로 합의, 커밋 안 된 오늘 작업분(하차문 로직 등)은 폴더 이동 전에 먼저 커밋, 문서 내 프로젝트명 표기(README·CLAUDE.md 제목, `app/CLAUDE.md`의 상위 프로젝트 참조)도 함께 갱신하기로 확정.
 - `CLAUDE.md`·`README.md` 제목의 `kr-rail-timetable`을 `rail_now`로, `app/CLAUDE.md`의 `kr_rail` 경로 참조를 `rail_now`로 교체(2026-08-28 흡수통합 당시의 역사적 서술 자체는 그대로 두고, 이후 경로 참조만 갱신). `.claude/settings.local.json`은 과거 명령 허용목록이라 손대지 않음.
 - 폴더 실물 이동은 `D:\OneDrive\개인 자료\바이브 코딩\kr_rail` → `D:\OneDrive\개인 자료\바이브 코딩\rail_now`(git 저장소 자체는 상대경로만 쓰므로 이동 자체는 안전, `git worktree repair`만 별도 필요). AI 메모리(`C:\Users\User\.claude\projects\D--OneDrive...kr-rail\memory\`)는 경로에 묶여 있어 자동으로 안 따라온다는 점을 사용자에게 안내함 — 다음 세션에서 필요하면 수동 이관.
+
+## 2026-08-30 (계속) — Claude (`git worktree repair` 실행 — 폴더 개칭 후속 마무리)
+
+- 사용자가 세션을 닫고 `kr_rail` → `rail_now` 폴더 실물 이동을 완료한 뒤 새 세션에서 요청. `git worktree list`로 확인해보니 `app-feature-design` worktree가 옛 경로(`.../kr_rail/...`)를 참조해 `prunable` 상태였음 — 다만 worktree 폴더 자체(`.claude/worktrees/app-feature-design`)는 상위 폴더 이동을 따라 이미 `rail_now` 밑에 물리적으로 존재.
+- 메인 저장소에서 `git worktree repair`를 인자 없이 실행했더니 반영이 안 돼(`git worktree list`가 여전히 옛 경로 표시), worktree의 현재 경로를 명시(`git worktree repair "<rail_now 경로>/.claude/worktrees/app-feature-design"`)해서 재실행 — 이번엔 "gitdir incorrect" 메시지와 함께 정상 반영됨.
+- 양방향 참조 파일 확인: 메인 저장소의 `.git/worktrees/app-feature-design/gitdir`와 worktree 쪽 `.git`(gitdir 포인터) 둘 다 `rail_now` 새 경로로 갱신된 것을 직접 `cat`으로 확인.
+- 완료 기준대로 `git worktree list`(두 worktree 모두 정상, prunable 없음)와 worktree 안에서 `git status`(`nothing to commit, working tree clean`) 재확인까지 마침. `todo.md`의 해당 항목 삭제.
