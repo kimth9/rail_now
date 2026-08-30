@@ -24,6 +24,5 @@
 
 ### 확인 필요
 
-- [ ] 앱 스택 확정 — README 상태줄의 Kotlin/Compose + Room은 가정값
 - [ ] **서울시 실시간 위치정보 API — 첫차 운행 시작(오전 5시 반 이후) 뒤 실데이터 응답 확인만 남음.** 2026-08-31 새벽 무한로딩 문제는 **URL 자체가 틀렸던 것**이 원인으로 확정(잘못된 URL: `http://openapi.seoul.go.kr:8088/...` → 올바른 URL: `http://swopenapi.seoul.go.kr/api/subway/{키}/json/{서비스}/{시작}/{끝}/{역명|호선명}`, 사용자가 직접 찾아줌). 올바른 URL로 재시도한 결과 **키 2개(`SEOUL_SUBWAY_KEY`/`SEOUL_SUBWAY_KEY2`) × API 2개(`realtimeStationArrival`/`realtimePosition`) = 4개 조합 전부 인증 정상**(틀린 키로 받는 `INFO-100` 에러와 구분 확인함) — 도착정보는 실제 데이터까지 받음, 위치정보는 심야라 "해당하는 데이터가 없습니다"(`INFO-200`, 인증은 통과)만 뜨는 상태. 서비스 시간대에 위치정보도 실데이터 나오는지만 확인하면 완전히 종료
 

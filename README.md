@@ -1,6 +1,6 @@
 # rail_now — 한국 철도 시각표 안드로이드 앱
 
-> 상태: 데이터 파이프라인 구축 중(앱 미착수) · 스택: Kotlin/Compose + Room, Python 3(파서) · 최종 검증: 2026-08-25(서해선(전동) 반영 — 다운로드는 됐지만 파싱을 빠뜨렸던 마지막 코레일 전동열차 노선)
+> 상태: 데이터 파이프라인 구축 중(앱 미착수) · 스택: Kotlin/Compose + Room, Retrofit/OkHttp, FusedLocationProviderClient(확정, 2026-08-31) — minSdk는 Android 16 하한 고정(구버전 미지원, Live Update가 Android 16 전용 API라 폴백 없음), Python 3(파서) · 최종 검증: 2026-08-25(서해선(전동) 반영 — 다운로드는 됐지만 파싱을 빠뜨렸던 마지막 코레일 전동열차 노선)
 
 한국 전체 철도(고속철도 + 광역전철)의 시각표를 오프라인 DB로 담고, **Android 16 Live Update 알림**으로 열차 도착·출발을 추적하는 앱.
 
