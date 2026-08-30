@@ -9,9 +9,19 @@ stop_door_side 테이블로 계산해 얹는다. door_directions 다음 단계(3
   추월 열차가 애초에 통과역 기록을 안 남기는 노선 — KTX/무궁화/ITX-마음 등 Tier B)는
   평시(normal_side)로 고정한다.
 
-door_directions에서 같은 (line_sheet, group_id)에 행이 2개 이상인 역(노선 분기·환승으로
-방면별 문방향이 갈리는 경우, 약 40개 조합)은 이번 단계에서 제외한다 — 잘못된 문방향을
-확정하는 것보다 안 채우는 게 안전하다(후속 과제, todo.md 참조).
+door_directions에서 같은 (line_sheet, group_id, 방향)에 행이 1개뿐이면 그대로 쓴다(1단계).
+방향까지 같은데 행이 2개 이상인 "진짜 다중행"(노선 분기·급행완행·종착 여부로 문방향이
+갈리는 경우, 2026-08-30 확인 결과 31개 조합)은 MULTI_ROW_RULES에 등록된 조합만 trips/
+stop_times의 기존 정보(종착 여부·목적지역·출발역·train_no 접두사·line_name)로 판정한다.
+신호가 불충분한 조합(경부급행B "지상서울" 구분 — 실제 stop_times에 그 역을 지나는 trip이
+0건이라 판별 불가, 광운대 하행 — 원본 자체가 '확인필요'/빈 값, 행신·강매 "서울역 착발" —
+라벨 해석 근거 불충분)은 잘못 채우는 것보다 비워두는 게 낫다는 원칙대로 계속 스킵한다.
+
+이번 버전부터 stop_type='destination'(종착)도 판정 대상에 포함한다(기존엔 'stop'만 처리해
+전 노선 통틀어 종착역 문방향이 한 번도 계산된 적이 없었음 — 의정부·광운대·온수·수락산 등
+종착 여부로 갈리는 조합을 풀려면 필요해서 범위를 넓혔다). 종착역은 dep_sec가 원래 없으므로
+arr_sec만 있으면 유효한 행으로 보고, 대피(Tier A) 판정 대상에서는 제외한다(정의상 대피는
+'정차 중 추월'이라 종착 이후 상황과는 무관).
 """
 import os
 import sqlite3
@@ -45,6 +55,120 @@ def evac_source_lines_for(line_name):
     return None
 
 
+def norm_direction(raw):
+    """door_directions.direction(자유 텍스트) -> trips.direction('up'/'down') 정규화.
+    괄호 설명이 붙은 값(예: '상행(중앙보훈병원 방면)')도 접두어만 보고 매칭한다.
+    매칭 안 되는 값(외선순환 등 순환선 표기)은 원문 그대로 둔다 — 이번 세션 범위 밖."""
+    if raw is None:
+        return None
+    if raw.startswith("상행"):
+        return "up"
+    if raw.startswith("하행"):
+        return "down"
+    return raw
+
+
+# ---- MULTI_ROW_RULES: 방향까지 같은데 행이 2개 이상인 조합 판정 ----
+# key: (line_sheet, group_id, norm_direction) — 방향 구분이 아예 없는 역은 direction=None.
+# value: function(ctx) -> (normal_side, evac_side) | None (None이면 스킵)
+# ctx = {"line_name", "train_no", "origin_name", "destination_name", "is_destination", "direction"}
+
+def _by_line_name(mapping, default=None):
+    def fn(ctx):
+        return mapping.get(ctx["line_name"], default)
+    return fn
+
+
+def _by_train_no_prefix(mapping, default=None):
+    def fn(ctx):
+        return mapping.get(ctx["train_no"][:1], default)
+    return fn
+
+
+def _by_destination(names, if_in, if_not):
+    def fn(ctx):
+        return if_in if ctx["destination_name"] in names else if_not
+    return fn
+
+
+def _by_origin(names, if_in, if_not):
+    def fn(ctx):
+        return if_in if ctx["origin_name"] in names else if_not
+    return fn
+
+
+def _by_is_destination(if_dest, if_not):
+    def fn(ctx):
+        return if_dest if ctx["is_destination"] else if_not
+    return fn
+
+
+def _by_direction(if_up, if_down):
+    def fn(ctx):
+        return if_up if ctx["direction"] == "up" else if_down
+    return fn
+
+
+# 1호선 경인선 9역(동인천/제물포/주안/동암/부평/송내/부천/역곡/개봉) — 공통 패턴:
+# 경인급행이면 왼쪽(급행), 아니면 오른쪽(일반).
+_GYEONGIN_EXPRESS_RULE = _by_line_name({"1호선/경인급행": ("왼쪽", None)}, ("오른쪽", None))
+_GYEONGIN_STATIONS = ["G0330", "G0332", "G0334", "G0336", "G0338", "G0340", "G0342", "G0344", "G0347"]
+
+# 9호선 완행(C)/급행(E) — 급행은 대피 대상 아님(evac_side 없음), 완행은 추월당할 수 있음.
+_LINE9_RULE = _by_train_no_prefix({"E": ("오른쪽", None), "C": ("오른쪽", "왼쪽")})
+
+MULTI_ROW_RULES = {
+    # 병점: 서동탄 지선 계통(line_name)이면 서동탄발/종착 쪽, 경부장항 계통이면 천안·신창행 쪽.
+    ("1호선", "G0274", "up"): _by_line_name(
+        {"1호선/서동탄-의정부": ("오른쪽", None)}, ("왼쪽", None)),
+    ("1호선", "G0274", "down"): _by_line_name(
+        {"1호선/서동탄-의정부": ("오른쪽", None)}, ("왼쪽", None)),
+
+    # 구로: 경인/경인급행 계통이 한쪽, 나머지(경부장항·서동탄-의정부·광명셔틀)가 반대쪽
+    # (상행/하행에서 좌우가 뒤바뀜 — 원본 4행 그대로 확인).
+    ("1호선", "G0288", "up"): _by_line_name(
+        {"1호선/경인": ("오른쪽", None), "1호선/경인급행": ("오른쪽", None)}, ("왼쪽", None)),
+    ("1호선", "G0288", "down"): _by_line_name(
+        {"1호선/경인": ("왼쪽", None), "1호선/경인급행": ("왼쪽", None)}, ("오른쪽", None)),
+
+    # 신도림 상행: 경인급행만 오른쪽, 나머지 전부 왼쪽(일반/경부급행A).
+    ("1호선", "G0289", "up"): _by_line_name(
+        {"1호선/경인급행": ("오른쪽", None)}, ("왼쪽", None)),
+
+    # 의정부 상행: 종착이면 오른쪽(원본 evac_side 칸에 '종착'이라는 상태값이 잘못 들어가
+    # 있어 무시 — 방향값이 아님), 아니면 왼쪽(일반).
+    ("1호선", "G0250", "up"): _by_is_destination(("오른쪽", None), ("왼쪽", None)),
+
+    # 광운대 상행: 종착이면 오른쪽, 아니면 왼쪽(일반).
+    ("1호선", "G0306", "up"): _by_is_destination(("오른쪽", None), ("왼쪽", None)),
+    # 광운대 하행은 원본 자체가 신뢰 불가(한 행은 type이 아예 비어있고, 다른 행은 정상측
+    # 값이 '확인필요'라는 상태 문자열) — 등록하지 않고 스킵.
+
+    # 5호선 강동 상행: 마천지선 출발(origin)이면 왼쪽, 그 외(본선/하남선)는 오른쪽.
+    ("5호선", "G0617", "up"): _by_origin({"마천"}, ("왼쪽", None), ("오른쪽", None)),
+
+    # 6호선 새절: door_directions엔 방향 구분이 없지만(direction=None) 실제로는 상행=응암행,
+    # 하행=봉화산행으로 trips.direction과 정확히 대응돼 그걸로 판정.
+    ("6호선", "G0638", None): _by_direction(("오른쪽", None), ("왼쪽", None)),
+
+    # 7호선 온수/수락산: 종착이면 오른쪽, 아니면 왼쪽(일반).
+    ("7호선", "G0345", None): _by_is_destination(("오른쪽", None), ("왼쪽", None)),
+    ("7호선", "G1020", None): _by_is_destination(("오른쪽", None), ("왼쪽", None)),
+
+    # 9호선 동작/마곡나루/가양: 완행(C)/급행(E) — 급행은 절대 대피 대상 아님.
+    ("9호선", "G0429", None): _LINE9_RULE,
+    ("9호선", "G0683", None): _LINE9_RULE,
+    ("9호선", "G0685", None): _LINE9_RULE,
+    # 9호선 신논현 상행(중앙보훈병원 방면) — 완행/급행으로 좌우가 갈림(대피 없음).
+    ("9호선", "G0699", "up"): _by_train_no_prefix(
+        {"E": ("오른쪽", None), "C": ("왼쪽", None)}),
+}
+for _gid in _GYEONGIN_STATIONS:
+    MULTI_ROW_RULES[("1호선", _gid, None)] = _GYEONGIN_EXPRESS_RULE
+# 경의중앙선 행신·강매("서울역 착발" vs "용산/청량리/용문 방면")는 어느 trip이 어느
+# 쪽인지 판별할 확실한 근거(목적지 라벨 해석)를 못 찾아 등록하지 않고 스킵.
+
+
 SCHEMA = """
 DROP TABLE IF EXISTS stop_door_side;
 CREATE TABLE stop_door_side(
@@ -73,30 +197,46 @@ def main():
                 break
         line_to_sheet[line] = sheet
 
-    # 2) door_directions: (line_sheet, group_id) 단일행만 채택
-    cur.execute("""
-    SELECT line_sheet, group_id, normal_side, evac_side
-    FROM door_directions
-    GROUP BY line_sheet, group_id
-    HAVING COUNT(*) = 1
-    """)
-    single_door = {(r["line_sheet"], r["group_id"]): (r["normal_side"], r["evac_side"]) for r in cur.fetchall()}
+    # 2) door_directions: (line_sheet, group_id, 정규화된 방향) 단위로 묶어 단일행/다중행 분리
+    cur.execute("SELECT line_sheet, group_id, direction, normal_side, evac_side FROM door_directions")
+    grouped = defaultdict(list)
+    for r in cur.fetchall():
+        key = (r["line_sheet"], r["group_id"], norm_direction(r["direction"]))
+        grouped[key].append((r["normal_side"], r["evac_side"]))
 
-    # 3) stop_id -> (group_id, resolved sheet, door row) — door 정보가 있는 stop_id만
+    single_door = {}
+    multi_keys_total = 0
+    multi_keys_resolved = 0
+    for key, rows in grouped.items():
+        if len(rows) == 1:
+            single_door[key] = rows[0]
+        else:
+            multi_keys_total += 1
+            if key in MULTI_ROW_RULES:
+                multi_keys_resolved += 1
+
+    # 3) stop_id -> (group_id, sheet) — door_directions에 매칭 정보가 있는 stop_id만
     cur.execute("SELECT stop_id, line, group_id FROM stops")
     door_stop = {}
+    known_keys_prefix = {(k[0], k[1]) for k in grouped}
     for r in cur.fetchall():
         sheet = line_to_sheet.get(r["line"], r["line"])
-        key = (sheet, r["group_id"])
-        if key in single_door:
-            door_stop[r["stop_id"]] = (r["group_id"], single_door[key])
+        if (sheet, r["group_id"]) in known_keys_prefix:
+            door_stop[r["stop_id"]] = (r["group_id"], sheet)
 
-    # 3-1) 1호선은 stops.line='1호선' 한 값이지만 trips.line_name은 '1호선/경부장항' 등으로
-    # 세분화돼 있어 별도로 모은다.
-    cur.execute("SELECT DISTINCT line_name FROM trips WHERE line_name LIKE ?", (LINE1_PREFIX + "%",))
-    line1_variants = [r[0] for r in cur.fetchall()]
+    def resolve_door(sheet, group_id, ctx):
+        for dkey in (ctx["direction"], None):
+            key = (sheet, group_id, dkey)
+            if key in single_door:
+                return single_door[key]
+            rule = MULTI_ROW_RULES.get(key)
+            if rule:
+                result = rule(ctx)
+                if result:
+                    return result
+        return None
 
-    # 4) Tier A 통과(pass) 이벤트: group_id, service_id별로 모아 dict[(group_id, service_id)] = [(pass_time, trip_id, line_name)]
+    # 4) Tier A 통과(pass) 이벤트: (group_id, service_id)별로 모아 dict
     cur.execute("""
     SELECT s.group_id AS group_id, t.service_id AS service_id, t.line_name AS line_name,
            st.trip_id AS trip_id, COALESCE(st.dep_sec, st.arr_sec) AS pass_time
@@ -109,14 +249,31 @@ def main():
     for r in cur.fetchall():
         pass_events[(r["group_id"], r["service_id"])].append((r["pass_time"], r["trip_id"], r["line_name"]))
 
-    # 5) 대상 정차(stop_type='stop', door 정보 있는 stop_id)만 훑는다
+    # 4-1) trip_id -> (origin_name, destination_name) — 강동/병점류 규칙에 필요
+    cur.execute("""
+    SELECT t.trip_id AS trip_id, sgo.name_ko AS origin_name, sgd.name_ko AS destination_name
+    FROM trips t
+    LEFT JOIN stops so ON t.origin = so.stop_id
+    LEFT JOIN station_groups sgo ON so.group_id = sgo.group_id
+    LEFT JOIN stops sd ON t.destination = sd.stop_id
+    LEFT JOIN station_groups sgd ON sd.group_id = sgd.group_id
+    """)
+    trip_od = {r["trip_id"]: (r["origin_name"], r["destination_name"]) for r in cur.fetchall()}
+
+    # 1호선은 stops.line='1호선' 한 값이지만 trips.line_name은 '1호선/경부장항' 등으로
+    # 세분화돼 있어 별도로 모은다(Tier A 대피 판정용).
+    cur.execute("SELECT DISTINCT line_name FROM trips WHERE line_name LIKE ?", (LINE1_PREFIX + "%",))
+    line1_variants = [r[0] for r in cur.fetchall()]
+
+    # 5) 대상 정차(stop_type IN ('stop','destination'), door 정보 있는 stop_id)만 훑는다.
     cur.execute("""
     SELECT st.trip_id AS trip_id, st.stop_seq AS stop_seq, st.stop_id AS stop_id,
-           st.arr_sec AS arr_sec, st.dep_sec AS dep_sec,
-           t.line_name AS line_name, t.service_id AS service_id
+           st.arr_sec AS arr_sec, st.dep_sec AS dep_sec, st.stop_type AS stop_type,
+           t.line_name AS line_name, t.service_id AS service_id, t.train_no AS train_no,
+           t.direction AS direction
     FROM stop_times st
     JOIN trips t ON st.trip_id = t.trip_id
-    WHERE st.stop_type = 'stop'
+    WHERE st.stop_type IN ('stop', 'destination')
     """)
 
     rows_out = []
@@ -125,12 +282,29 @@ def main():
         info = door_stop.get(r["stop_id"])
         if info is None:
             continue
-        group_id, (normal_side, evac_side) = info
-        if r["arr_sec"] is None or r["dep_sec"] is None:
+        group_id, sheet = info
+        is_destination = r["stop_type"] == "destination"
+        if is_destination:
+            if r["arr_sec"] is None:
+                continue
+        else:
+            if r["arr_sec"] is None or r["dep_sec"] is None:
+                continue
+
+        origin_name, destination_name = trip_od.get(r["trip_id"], (None, None))
+        ctx = {
+            "line_name": r["line_name"], "train_no": r["train_no"],
+            "origin_name": origin_name, "destination_name": destination_name,
+            "is_destination": is_destination, "direction": r["direction"],
+        }
+        resolved = resolve_door(sheet, group_id, ctx)
+        if resolved is None:
             continue
+        normal_side, evac_side = resolved
 
         door_side, is_evac, overtaken_by = normal_side, 0, None
-        if evac_side:
+        # 대피(Tier A) 판정은 '정차 중 추월' 개념이라 종착역에는 적용하지 않는다.
+        if evac_side and not is_destination:
             src_lines = evac_source_lines_for(r["line_name"])
             if src_lines is None and r["line_name"].startswith(LINE1_PREFIX):
                 src_lines = line1_variants
@@ -153,6 +327,8 @@ def main():
     con.commit()
 
     print(f"stop_door_side {len(rows_out)}행 생성, 그 중 대피(is_evac=1) {n_evac}행")
+    print(f"다중행 조합 {multi_keys_total}개 중 {multi_keys_resolved}개 규칙 등록"
+          f"(나머지 {multi_keys_total - multi_keys_resolved}개는 신호 불충분으로 스킵)")
     cur.execute("""
     SELECT t.line_name, COUNT(*) c, SUM(sds.is_evac) evac
     FROM stop_door_side sds JOIN trips t ON sds.trip_id = t.trip_id
