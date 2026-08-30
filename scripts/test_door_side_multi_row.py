@@ -56,6 +56,16 @@ KNOWN_CASES = [
     ("AR#평일#0#A2001", "김포공항", "오른쪽"),
     ("AR#평일#0#A3001", "검암", "왼쪽"),  # 종착
     ("AR#평일#0#A2001", "검암", "오른쪽"),  # 일반
+    # 안양·의왕·군포·금천구청 "경부급행B" — B급행(K1902/K1904/K1945, 3편뿐)만 왼쪽,
+    # 나머지(A급행·완행)는 오른쪽. project_line1_gyeongbu_ab_express 메모리로 해소.
+    ("L1#서울급행#K1902", "안양", "왼쪽"),
+    ("L1#서울급행#K1902", "의왕", "왼쪽"),
+    ("L1#서울급행#K1902", "군포", "왼쪽"),
+    ("L1#서울급행#K1902", "금천구청", "왼쪽"),
+    ("L1#경부장항_평일_상#K602", "안양", "오른쪽"),
+    ("L1#경부장항_평일_상#K602", "의왕", "오른쪽"),
+    ("L1#경부장항_평일_상#K602", "군포", "오른쪽"),
+    ("L1#경부장항_평일_상#K602", "금천구청", "오른쪽"),
 ]
 
 
@@ -91,19 +101,22 @@ def main():
     assert all(r[0] == 0 for r in cur.fetchall()), "9호선 급행(E) trip 중 is_evac=1인 게 있음"
     print("OK  9호선 급행(E)은 전부 is_evac=0")
 
-    # 신뢰 불가로 스킵한 조합(안양 등)은 여전히 stop_door_side에 안 채워졌는지 확인
+    # 신뢰 불가로 스킵 유지 중인 유일한 잔여 조합(광운대 하행 종착 — 원본이 '확인필요')은
+    # 여전히 stop_door_side에 안 채워졌는지 확인
     cur.execute(
         """
         SELECT COUNT(*) FROM stop_door_side sds
         JOIN stop_times st ON sds.trip_id = st.trip_id AND sds.stop_seq = st.stop_seq
         JOIN stops s ON st.stop_id = s.stop_id
         JOIN station_groups sg ON s.group_id = sg.group_id
-        WHERE sg.name_ko = '안양' AND s.line = '1호선'
+        JOIN trips t ON st.trip_id = t.trip_id
+        WHERE sg.name_ko = '광운대' AND s.line = '1호선' AND t.direction = 'down'
+          AND st.stop_type = 'destination'
         """
     )
     (n,) = cur.fetchone()
-    assert n == 0, f"신호 불충분으로 스킵해야 할 안양(경부급행B 구분)에 {n}건이 채워져 있음"
-    print("OK  안양(경부급행B 구분 불가)은 예정대로 스킵됨")
+    assert n == 0, f"신호 불충분으로 스킵해야 할 광운대 하행 종착에 {n}건이 채워져 있음"
+    print("OK  광운대 하행 종착(확인필요)은 예정대로 스킵됨")
 
     print(f"\n{len(KNOWN_CASES)}건 + 부수 검증 2건 전부 통과")
 

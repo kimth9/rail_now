@@ -13,9 +13,8 @@ door_directions에서 같은 (line_sheet, group_id, 방향)에 행이 1개뿐이
 방향까지 같은데 행이 2개 이상인 "진짜 다중행"(노선 분기·급행완행·종착 여부로 문방향이
 갈리는 경우, 2026-08-30 확인 결과 31개 조합)은 MULTI_ROW_RULES에 등록된 조합만 trips/
 stop_times의 기존 정보(종착 여부·목적지역·출발역·train_no 접두사·line_name)로 판정한다.
-신호가 불충분한 조합(경부급행B "지상서울" 구분 — 실제 stop_times에 그 역을 지나는 trip이
-0건이라 판별 불가, 광운대 하행 — 원본 자체가 '확인필요'/빈 값, 행신·강매 "서울역 착발" —
-라벨 해석 근거 불충분)은 잘못 채우는 것보다 비워두는 게 낫다는 원칙대로 계속 스킵한다.
+신호가 불충분한 조합(광운대 하행 종착 — 원본 자체가 '확인필요'/빈 값)만 잘못 채우는
+것보다 비워두는 게 낫다는 원칙대로 계속 스킵한다.
 
 이번 버전부터 stop_type='destination'(종착)도 판정 대상에 포함한다(기존엔 'stop'만 처리해
 전 노선 통틀어 종착역 문방향이 한 번도 계산된 적이 없었음 — 의정부·광운대·온수·수락산 등
@@ -82,6 +81,12 @@ def _by_line_name(mapping, default=None):
 def _by_train_no_prefix(mapping, default=None):
     def fn(ctx):
         return mapping.get(ctx["train_no"][:1], default)
+    return fn
+
+
+def _by_train_no_in(names, if_in, if_not):
+    def fn(ctx):
+        return if_in if ctx["train_no"] in names else if_not
     return fn
 
 
@@ -210,6 +215,16 @@ MULTI_ROW_RULES[("1호선", "G0292", "down")] = _NORYANGJIN_RULE
 
 # 동두천 상행: 종착이면 원본 정상측 값이 '확인필요'라 스킵, 아니면 일반(왼쪽)으로 폴백.
 MULTI_ROW_RULES[("1호선", "G0323", "up")] = _by_is_destination(None, ("왼쪽", None))
+
+# 안양·의왕·군포·금천구청 "경부급행B(지상서울~천안)": [[project_line1_gyeongbu_ab_express]]
+# 메모리로 2026-08-31 해소 — B급행은 지상 서울역~천안/신창을 잇는 별개 계통으로 실제로는
+# K1902·K1904·K1945 딱 3편뿐(서울급행 시트 소속, 평일 출퇴근 하루 3회). 나머지 전부(A급행
+# 포함) "1호선/경부장항" line_name으로 뭉뚱그려져 있어 line_name으론 구분이 안 되고
+# train_no로만 구분 가능. "지상서울" 역 경유 여부로 구분하려 했던 최초 가설은 그 역이
+# 실제 정차 기록 0건이라 폐기.
+_GYEONGBU_B_EXPRESS_RULE = _by_train_no_in({"K1902", "K1904", "K1945"}, ("왼쪽", None), ("오른쪽", None))
+for _gid in ("G0089", "G0278", "G0280", "G0285"):  # 안양·의왕·군포·금천구청
+    MULTI_ROW_RULES[("1호선", _gid, None)] = _GYEONGBU_B_EXPRESS_RULE
 
 # 안산과천선 안산 하행: 종착이면 오른쪽(대피 없음), 아니면 일반행(왼쪽, 대피 시 오른쪽)으로 폴백.
 MULTI_ROW_RULES[("4호선_안산과천선", "G0368", "down")] = _by_is_destination(("오른쪽", None), None)
