@@ -109,6 +109,12 @@ def _by_direction(if_up, if_down):
     return fn
 
 
+def _const(side):
+    def fn(ctx):
+        return side
+    return fn
+
+
 # 1호선 경인선 9역(동인천/제물포/주안/동암/부평/송내/부천/역곡/개봉) — 공통 패턴:
 # 경인급행이면 왼쪽(급행), 아니면 오른쪽(일반).
 _GYEONGIN_EXPRESS_RULE = _by_line_name({"1호선/경인급행": ("왼쪽", None)}, ("오른쪽", None))
@@ -141,8 +147,9 @@ MULTI_ROW_RULES = {
 
     # 광운대 상행: 종착이면 오른쪽, 아니면 왼쪽(일반).
     ("1호선", "G0306", "up"): _by_is_destination(("오른쪽", None), ("왼쪽", None)),
-    # 광운대 하행은 원본 자체가 신뢰 불가(한 행은 type이 아예 비어있고, 다른 행은 정상측
-    # 값이 '확인필요'라는 상태 문자열) — 등록하지 않고 스킵.
+    # 광운대 하행: '일반'(비종착)은 오른쪽(2026-08-31 사용자 확인). 종착 쪽은 원본 정상측
+    # 값이 '확인필요'라는 상태 문자열이라 여전히 스킵(None).
+    ("1호선", "G0306", "down"): _by_is_destination(None, ("오른쪽", None)),
 
     # 5호선 강동 상행: 마천지선 출발(origin)이면 왼쪽, 그 외(본선/하남선)는 오른쪽.
     ("5호선", "G0617", "up"): _by_origin({"마천"}, ("왼쪽", None), ("오른쪽", None)),
@@ -165,8 +172,70 @@ MULTI_ROW_RULES = {
 }
 for _gid in _GYEONGIN_STATIONS:
     MULTI_ROW_RULES[("1호선", _gid, None)] = _GYEONGIN_EXPRESS_RULE
-# 경의중앙선 행신·강매("서울역 착발" vs "용산/청량리/용문 방면")는 어느 trip이 어느
-# 쪽인지 판별할 확실한 근거(목적지 라벨 해석)를 못 찾아 등록하지 않고 스킵.
+
+# 2호선 신도림·성수: door_directions는 방향을 순환 방향 텍스트(외선순환/내선순환)나
+# 지선 종점명(까치산발/신설동발)으로 적어놔 trips.direction('outer'/'inner'/'up'/'down')과
+# 형식이 안 맞아 지금까지 전혀 매칭이 안 되고 있었다. 실측 대조 결과 지선 계통(신도림의
+# up/down, 성수의 up/down)은 전부 "일반"과 같은 문방향을 쓰고, 본선 순환(outer/inner)의
+# '종착'(stop_type='destination')일 때만 다르다는 게 확인돼(2026-08-31 사용자 확인) 아래처럼
+# 정리된다. 지선의 시발역(stop_type='origin') 쪽은 원래 이 프로젝트 전체에서 어느 노선도
+# 시발역 문방향을 계산하지 않으므로(이번 세션에서 새로 다룬 건 종착뿐) 범위 밖으로 둔다.
+_SINDORIM_2 = _by_is_destination(("오른쪽", None), ("왼쪽", None))
+MULTI_ROW_RULES[("2호선", "G0289", "outer")] = _SINDORIM_2
+MULTI_ROW_RULES[("2호선", "G0289", "inner")] = _SINDORIM_2
+MULTI_ROW_RULES[("2호선", "G0289", "down")] = _const(("왼쪽", None))  # 까치산지선 종점(신도림)
+
+_SEONGSU_2 = _by_is_destination(("왼쪽", None), ("오른쪽", None))
+MULTI_ROW_RULES[("2호선", "G0713", "outer")] = _SEONGSU_2
+MULTI_ROW_RULES[("2호선", "G0713", "inner")] = _const(("오른쪽", None))
+MULTI_ROW_RULES[("2호선", "G0713", "up")] = _const(("오른쪽", None))  # 성수지선 종점(성수, 신설동발)
+
+# 경의중앙선/경의선 행신·강매: "서울역행"(destination=서울, 경의선 계통) 열차만
+# "서울역 착발" 문방향을 쓰고, 나머지(경의중앙선 전체 + 서울역행이 아닌 경의선)는
+# "용산/청량리/용문 방면" 문방향을 쓴다(2026-08-31 사용자 확인).
+_HAENGSHIN_GANGMAE_RULE = _by_destination({"서울"}, ("왼쪽", None), ("오른쪽", None))
+MULTI_ROW_RULES[("경의중앙선", "G0001", None)] = _HAENGSHIN_GANGMAE_RULE  # 행신
+MULTI_ROW_RULES[("경의중앙선", "G0478", None)] = _HAENGSHIN_GANGMAE_RULE  # 강매
+
+# 아래는 41개 "다중행" 조합 집계엔 안 잡혔지만(방향별로 나누면 이미 count=1), 그 방향
+# 텍스트가 trips.direction과 형식이 안 맞거나(대구/중앙로/공항철도 — "구미행"/"판암행"
+# 등 종점명, 검암 — "인천공항 방면" 등 문구), 방향 무관 기본행(direction=None)과
+# 서비스 한정 예외행이 공존해 예외행이 그 방향 전체를 잘못 덮어쓰던(노량진·동두천·안산,
+# 2026-08-31 발견) 조합이다. 같은 MULTI_ROW_RULES로 해소한다.
+
+# 노량진: 경인급행만 오른쪽, 나머지(경부장항 등 전부)는 왼쪽 — 방향 무관.
+_NORYANGJIN_RULE = _by_line_name({"1호선/경인급행": ("오른쪽", None)}, ("왼쪽", None))
+MULTI_ROW_RULES[("1호선", "G0292", "up")] = _NORYANGJIN_RULE
+MULTI_ROW_RULES[("1호선", "G0292", "down")] = _NORYANGJIN_RULE
+
+# 동두천 상행: 종착이면 원본 정상측 값이 '확인필요'라 스킵, 아니면 일반(왼쪽)으로 폴백.
+MULTI_ROW_RULES[("1호선", "G0323", "up")] = _by_is_destination(None, ("왼쪽", None))
+
+# 안산과천선 안산 하행: 종착이면 오른쪽(대피 없음), 아니면 일반행(왼쪽, 대피 시 오른쪽)으로 폴백.
+MULTI_ROW_RULES[("4호선_안산과천선", "G0368", "down")] = _by_is_destination(("오른쪽", None), None)
+
+# 인천1호선 박촌: 종착이면 오른쪽, 아니면 왼쪽(원래 '박촌종착'이라는 방향 텍스트가
+# trips.direction과 안 맞아 지금까지 아예 반영이 안 되던 조합).
+MULTI_ROW_RULES[("인천1호선", "G1046", None)] = _by_is_destination(("오른쪽", None), ("왼쪽", None))
+
+# 대경선 대구: 구미 방면(up)이면 왼쪽, 경산·동대구 방면(down)이면 오른쪽.
+MULTI_ROW_RULES[("대경선", "G0112", "up")] = _const(("왼쪽", None))
+MULTI_ROW_RULES[("대경선", "G0112", "down")] = _const(("오른쪽", None))
+
+# 대전1호선 중앙로: 반석 방면(up)이면 왼쪽, 판암 방면(down)이면 오른쪽.
+MULTI_ROW_RULES[("대전1호선", "G0835", "up")] = _const(("왼쪽", None))
+MULTI_ROW_RULES[("대전1호선", "G0835", "down")] = _const(("오른쪽", None))
+
+# 공항철도 김포공항: 서울역 방면(up)이면 왼쪽, 인천공항 방면(down)이면 오른쪽.
+MULTI_ROW_RULES[("공항철도", "G0587", "up")] = _const(("왼쪽", None))
+MULTI_ROW_RULES[("공항철도", "G0587", "down")] = _const(("오른쪽", None))
+
+# 공항철도 검암: 종착이면 왼쪽. 아니면(인천공항/서울역 방면 공통 오른쪽) 오른쪽 —
+# 원본의 '양방향 대피/경합'(왼쪽) 행은 방향 무관 대피 상황을 가리키는 것으로 보여
+# evac_side로 흡수(공항철도는 이미 EVAC_SOURCE_LINES에 등록돼 대피 판정 대상).
+_GEOMAM_RULE = _by_is_destination(("왼쪽", None), ("오른쪽", "왼쪽"))
+MULTI_ROW_RULES[("공항철도", "G1053", "up")] = _GEOMAM_RULE
+MULTI_ROW_RULES[("공항철도", "G1053", "down")] = _GEOMAM_RULE
 
 
 SCHEMA = """
@@ -225,15 +294,22 @@ def main():
             door_stop[r["stop_id"]] = (r["group_id"], sheet)
 
     def resolve_door(sheet, group_id, ctx):
+        # MULTI_ROW_RULES를 single_door보다 먼저 본다 — 노량진·동두천·안산처럼 같은
+        # (line_sheet, group_id)에 방향 무관 기본행(direction=None)과 서비스/종착
+        # 한정 예외행이 공존하는 경우, 예외행이 그 방향 전부를 덮어써 버리면 안 되기
+        # 때문(2026-08-31 발견 — 예외행을 무조건 방향 키로만 잡으면 일반 열차까지
+        # 잘못된 값을 받는다). MULTI_ROW_RULES에 등록된 키는 항상 규칙 함수가 최종
+        # 판단하고, None을 반환하면(조건 불충족/확신 없음) 다음 방향 키로 넘어간다.
         for dkey in (ctx["direction"], None):
             key = (sheet, group_id, dkey)
-            if key in single_door:
-                return single_door[key]
             rule = MULTI_ROW_RULES.get(key)
             if rule:
                 result = rule(ctx)
                 if result:
                     return result
+                continue
+            if key in single_door:
+                return single_door[key]
         return None
 
     # 4) Tier A 통과(pass) 이벤트: (group_id, service_id)별로 모아 dict
