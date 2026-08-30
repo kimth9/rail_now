@@ -46,6 +46,21 @@ MERGE_KEY = {
     "상동": "밀양상동",  # 서울 7호선(부천시 상동)과 무관한 경부선 상동역(밀양)
 }
 
+# 광주~광주송정 구간은 광주선 내에서 "광주송정행=상행/광주행=하행" 관례를 쓰는데
+# 이 두 열차는 광주선 상행으로 진입했다가 호남선 하행으로 연계돼 방향관례가 충돌한다.
+# 시트의 고정 행 순서(극락강이 광주보다 위)가 이 두 열차에서만 실제 통과 순서와
+# 반대라 극락강/광주 두 항목의 위치를 swap해 바로잡는다(2026-08-30, 사용자 확인,
+# rail.blue 실측 대조로 나머지 9개 역 시각은 전부 일치 확인).
+GWANGJU_SPUR_SWAP_TRAINS = {"1491", "1492"}
+
+# 이 6개 열차는 "홍성(출발)->...->평택->안중->인주->합덕->홍성(도착)"으로 돌아오는
+# 서해선 관통 순환열차다. 서해선 시트에 이미 완전하고 정확한 버전이 있는 반면
+# (rail.blue 실측과 초 단위까지 일치), 장항선 시트 쪽 같은 열차번호 행은 정차역
+# 목록에 안중·인주·합덕이 없어 억지로 채운 값이라 신뢰 불가(예: 1246 홍성 출발시각이
+# 원본 셀 자체에 18:30으로 잘못 박혀있음, 실제 15:20). 장항선 쪽은 파싱하지 않고
+# 서해선 쪽 완전한 데이터만 쓴다(2026-08-30, 사용자 확인).
+SEOHAE_THROUGH_TRAINS_SKIP_IN_JANGHANG = {"1241", "1242", "1243", "1244", "1245", "1246"}
+
 
 def clean(v):
     return str(v).strip() if v is not None else ""
@@ -129,12 +144,18 @@ def main():
                 raw_train_no = ws.cell(hr, c).value
                 # 실제 열차 열 뒤에 열 라벨의 한자/영문 버전이 별도 열로 붙어있다
                 # (예: 열차번호 -> 列車番號 -> Train NO.). 열차번호는 항상 숫자이므로
-                # 숫자가 아니면 데이터 열이 끝난 것으로 보고 이 블록을 종료한다.
+                # 숫자가 아니면 그 열은 라벨 열로 보고 건너뛴다. 서해선 시트는 이
+                # 라벨이 중간에 한 번 더 나오고 그 뒤에 열차가 더 이어지는 2블록
+                # 구조라 여기서 스캔을 끝내면(break) 뒤쪽 그룹이 통째로 누락된다
+                # (2026-08-30 발견, 1241/1243/1245이 서해선에서 빠져있었음) —
+                # 다른 시트는 라벨 이후 유효 열이 없어 continue해도 결과가 같다.
                 if raw_train_no is None or raw_train_no == "":
                     continue
                 if not isinstance(raw_train_no, (int, float)):
-                    break
+                    continue
                 train_no = clean(raw_train_no)
+                if sheet == "장항선" and train_no in SEOHAE_THROUGH_TRAINS_SKIP_IN_JANGHANG:
+                    continue
                 formation = clean(ws.cell(hr - 1, c).value)
                 sid, flags = parse_days(ws.cell(rr, c).value)
                 services[sid] = flags
@@ -149,14 +170,22 @@ def main():
                     warnings.append(f"[{sheet}/{blk['title']}] {train_no}: 정차역 {len(rows)}개 — 제외")
                     continue
 
+                if sheet == "호남선" and train_no in GWANGJU_SPUR_SWAP_TRAINS:
+                    idx = {name: i for i, (name, _) in enumerate(rows)}
+                    if "극락강" in idx and "광주" in idx:
+                        i, j = idx["극락강"], idx["광주"]
+                        rows[i], rows[j] = rows[j], rows[i]
+
                 # ponytail: 원본에 종착역 라벨 자체가 신뢰 안 되는 행이 실제로 있었다
-                # (예: 장항선 1246은 '종착역=홍성'이라 적혀 있었지만 실제로는 홍성을
-                # 지나 평택까지 정상 운행 — 종착역 라벨을 기준으로 뒤 데이터를 잘라내는
-                # 방식은 시도했다가 이런 경우를 오히려 망가뜨려서 되돌림). 그래서 자정
-                # 넘김 보정은 "큰 폭(6시간 이상)으로 역행하면 다음날"로만 판단하고,
-                # 그보다 작은 역행(원본 자체의 이상치로 추정)은 보정하지 않고 경고만
-                # 남긴다 — 완벽한 정합성 검증 대신 명백한 24시간대 오류만 막는 선.
-                # 필요해지면 이상치 행을 사람이 직접 확인해 예외 처리 추가.
+                # (호남선 1491/1492·장항선/서해선 1241~1246이 그런 사례였고, 위
+                # GWANGJU_SPUR_SWAP_TRAINS/SEOHAE_THROUGH_TRAINS_SKIP_IN_JANGHANG로
+                # 개별 확인 후 예외 처리함, 2026-08-30). 종착역 라벨을 기준으로 뒤
+                # 데이터를 일괄로 잘라내는 방식은 시도했다가 다른 정상 케이스를 오히려
+                # 망가뜨려서 되돌림. 그래서 자정 넘김 보정은 "큰 폭(6시간 이상)으로
+                # 역행하면 다음날"로만 판단하고, 그보다 작은 역행(원본 자체의 이상치로
+                # 추정)은 보정하지 않고 경고만 남긴다 — 완벽한 정합성 검증 대신 명백한
+                # 24시간대 오류만 막는 선. 새 이상치가 나오면 사람이 직접 확인해 위와
+                # 같은 개별 예외를 추가한다.
                 ROLLBACK_THRESHOLD = 6 * 3600
                 rolled, prev = 0, -1
                 fixed = []
