@@ -1,6 +1,6 @@
 # rail_now — 한국 철도 시각표 안드로이드 앱
 
-> 상태: 데이터 파이프라인 구축 중(앱 미착수) · 스택: Kotlin/Compose + Room, Retrofit/OkHttp, FusedLocationProviderClient(확정, 2026-08-31) — minSdk는 Android 16 하한 고정(구버전 미지원, Live Update가 Android 16 전용 API라 폴백 없음), Python 3(파서) · 최종 검증: 2026-08-25(서해선(전동) 반영 — 다운로드는 됐지만 파싱을 빠뜨렸던 마지막 코레일 전동열차 노선)
+> 상태: 데이터 파이프라인 구축 완료 + `android/` 앱 뼈대 구축(2026-08-31, 화면 로직·API 연동은 아직) · 스택: Kotlin/Compose + Room, Retrofit/OkHttp, FusedLocationProviderClient(확정, 2026-08-31) — minSdk는 Android 16 하한 고정(구버전 미지원, Live Update가 Android 16 전용 API라 폴백 없음), Python 3(파서) · 최종 검증: 2026-08-25(서해선(전동) 반영 — 다운로드는 됐지만 파싱을 빠뜨렸던 마지막 코레일 전동열차 노선)
 
 한국 전체 철도(고속철도 + 광역전철)의 시각표를 오프라인 DB로 담고, **Android 16 Live Update 알림**으로 열차 도착·출발을 추적하는 앱.
 
@@ -38,7 +38,7 @@ python3 scripts/build_door_directions.py output/kr_rail_timetable.sqlite output/
 python3 scripts/build_door_side.py output/kr_rail_timetable.sqlite
 ```
 
-산출된 `kr_rail_timetable.sqlite`를 안드로이드 `assets/`에 넣고 Room으로 연다.
+산출된 `kr_rail_timetable.sqlite`(184MB)는 앱에 번들하지 않고 **GitHub Releases에 올려 최초 실행 시 다운로드**하는 방식으로 확정(2026-08-31, APK·git 리포 크기 문제 회피). 안드로이드 쪽은 `android/app/.../data/db/DbDownloader.kt` 참조.
 
 필요 패키지: `openpyxl`, `xlrd`(인천1호선 원본이 구버전 `.xls`라 필요). 그 외 의존성 없음.
 
@@ -67,8 +67,14 @@ python3 scripts/build_door_side.py output/kr_rail_timetable.sqlite
 | `scripts/build_db.py` | 파싱 결과를 하나의 SQLite로 병합 |
 | `data/line1_stops.csv` | 1호선 역명 절삭 복원 매핑 (검수용) |
 | `output/kr_rail_timetable.sqlite` | 배포용 번들 |
+| `android/` | 안드로이드 앱(Kotlin/Compose/Room, 뼈대만 구축됨, 2026-08-31) |
+| `app/` | 흡수통합된 웹앱(React/TS, `android/`와는 완전히 별개 스택) |
 
 **파서는 노선 계열마다 별도로 둔다.** 원본 엑셀의 레이아웃이 기관·노선마다 전혀 달라, 하나로 합치면 오히려 취약해진다. 출력 스키마만 동일하게 맞춰 `build_db.py`에서 합류시킨다. 노선을 추가할 때는 파서 파일을 새로 만들고 `build_db.py`의 `LINE_OF`에 한 줄 등록한다.
+
+**`android/` 빌드 환경**: Windows에 Android SDK를 직접 설치하지 않고도 CLI로 빌드·테스트·lint를 검증할 수 있도록 Docker 이미지(`android/Dockerfile`, `gradle:8.10-jdk21` 베이스 + Android SDK 36)를 만들어뒀다. `android/docker-build.sh`로 실행(`assembleDebug testDebugUnitTest lint` 기본). 에뮬레이터는 Docker 안에서 GPU 가속이 사실상 불가능해 포함하지 않았다 — 인터랙티브 UI 확인·`connectedAndroidTest`(DB 다운로드·스모크 테스트 포함)는 Android Studio를 네이티브 설치해 에뮬레이터/실기기로 진행할 것. Room이 Robolectric의 JVM 유닛테스트로 검증 안 되는 이유(2026-08-31 확인 — Robolectric 4.14.1이 아직 minSdk 36을 지원하지 않음)는 `app/src/androidTest/.../RailNowDatabaseSmokeTest.kt` 주석 참조.
+
+**DB 배포 방식**: 앱에 DB를 번들하는 대신 최초 실행 시 다운로드하는 방식으로 확정(2026-08-31, 사용자 제안) — GitHub Releases에 `kr_rail_timetable.sqlite`를 올리고 `secrets.properties`의 `DB_DOWNLOAD_URL`에 다운로드 링크를 채운다. 아직 이 프로젝트의 GitHub 저장소가 없어 URL은 비워둔 상태 — 코드(`DbDownloader.kt`)는 미리 준비해뒀고, 저장소·릴리스 생성 후 URL만 채우면 바로 동작한다.
 
 ---
 
