@@ -1,0 +1,7 @@
+# ==== requirements.txt — 팀 표준 양식 (k-stock auto 규약) ====
+# 규칙: 버전 핀(==) + 핀 이유·검증일을 주석으로. 안 쓰는 패키지는 즉시 제거.
+# 마지막 전체 검증: YYYY-MM-DD (Python 3.x)
+#
+# --- 아래 예시를 지우고 실제 의존성 기입 ---
+# requests==2.32.3        # HTTP 클라이언트 (YYYY-MM-DD 검증)
+# pandas==2.2.2           # 데이터 처리 (YYYY-MM-DD 검증)

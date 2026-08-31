@@ -1,0 +1,1 @@
+테스트 코드 (pytest 등). 소형 표본 데이터는 tests/samples/에, 대용량 실데이터는 RAW/에.
